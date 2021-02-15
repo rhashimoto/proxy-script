@@ -1,11 +1,18 @@
 {
   "name": "proxy-script",
   "type": "module",
-  "main": "src/index.js",
+  "main": "docs/dist/proxy-script.js",
+  "scripts": {
+    "build": "rollup -c",
+    "serve": "web-dev-server --port 5000"
+  },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^17.1.0",
     "@types/jest": "^26.0.20",
+    "@web/dev-server": "^0.1.7",
     "jest": "^26.6.3",
     "jest-environment-node": "^26.6.2",
+    "rollup": "^2.39.0",
     "typescript": "^4.1.5"
   }
 }

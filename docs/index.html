@@ -2,8 +2,26 @@
 <html>
   <head>
     <title>proxy-script demo</title>
+
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   </head>
   <body>
     Content goes here.
+    <script type="module">
+      import { Transpiler, Runtime } from './dist/proxy-script.js';
+
+      Transpiler.register(Babel);
+
+      void async function() {
+        const transpiler = new Transpiler();
+        const transpiled = transpiler.transpile(`
+          return 'foo';
+        `);
+
+        const runtime = new Runtime();
+        const result = await runtime.run(transpiled);
+        console.log('result', result);
+      }();
+    </script>
   </body>
 </html>
