@@ -53,7 +53,10 @@ return 'Hello, world!';
         monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
           noSemanticValidation: false,
           noSyntaxValidation: false,
-          diagnosticCodesToIgnore: [ /* top-level return */ 1108]
+          diagnosticCodesToIgnore: [
+            /* top-level return */ 1108,
+            /* top-level await */ 1375, 1378
+          ]
         });
         
         // @ts-ignore
