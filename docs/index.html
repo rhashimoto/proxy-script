@@ -3,25 +3,111 @@
   <head>
     <title>proxy-script demo</title>
 
+    <!-- proxy-script requires a browser-friendly Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Monaco is used in this demo, not required for proxy-script. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.22.3/min/vs/loader.min.js"></script>
   </head>
   <body>
-    Content goes here.
+    <h1>proxy-script sandbox demo</h1>
+    <div style="margin-bottom: 1em;">
+      Visit the <a href="https://github.com/rhashimoto/proxy-script">GitHub repo</a> for details.
+    </div>
     <script type="module">
       import { Transpiler, Runtime } from './dist/proxy-script.js';
 
       Transpiler.register(Babel);
+      const transpiler = new Transpiler();
+      const runtime = new Runtime();
 
-      void async function() {
-        const transpiler = new Transpiler();
-        const transpiled = transpiler.transpile(`
-          return 'foo';
-        `);
+      async function runScript(script) {
+        try {
+          const transpiled = transpiler.transpile(script);
+          const result = await runtime.run(transpiled)
 
-        const runtime = new Runtime();
-        const result = await runtime.run(transpiled);
-        console.log('result', result);
-      }();
+          document.getElementById('results').textContent = JSON.stringify(result, null, 2);
+        } catch (error) {
+          // TODO: relocate error through sourcemap
+          document.getElementById('results').textContent = error.stack;
+        }
+      };
+
+      // Everything below this point is setup for the editor and button to
+      // call the function above with a script to run.
+
+      const initialSource = `
+// Enter JavaScript here and click the Run button to execute
+// in a proxy-script sandbox. The return value or exception
+// will be shown below.
+//
+// Open the browser Developer Tools to see console.log output
+// or enter the debugger using a 'debugger' statement.
+return 'Hello, world!';
+      `.trim();
+
+      require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.22.3/min/vs' }});
+      // @ts-ignore
+      require(['vs/editor/editor.main'], function() {
+        // @ts-ignore
+        monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+          noSemanticValidation: false,
+          noSyntaxValidation: false,
+          diagnosticCodesToIgnore: [ /* top-level return */ 1108]
+        });
+        
+        // @ts-ignore
+        monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+          // @ts-ignore
+          target: monaco.languages.typescript.ScriptTarget.ES2020,
+          alwaysStrict: true,
+          allowNonTsExtensions: true
+        });
+        
+        // @ts-ignore
+        const editor = monaco.editor.create(document.getElementById('editor-container'), {
+          value: initialSource,
+          language: 'javascript',
+          minimap: { enabled: false },
+          automaticLayout: true
+        });
+
+        const runButton = document.getElementById('run');
+        runButton.removeAttribute('disabled');
+        runButton.addEventListener('click', async (event) => {
+          await runScript(editor.getValue());
+        });
+      });
     </script>
+
+    <style>
+      #resizeable-container {
+        width: 6.5in;
+        height: 3in;
+        float: left;
+        resize: both;
+        overflow: auto;
+      }
+
+      #editor-container {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      #results {
+        width: 6.5in;
+        height: 1.5in;
+        white-space: pre-wrap;
+        resize: vertical;
+        overflow-y: scroll;
+      }
+    </style>
+    <div id="resizeable-container">
+      <div id="editor-container"></div>
+    </div>
+    <button id="run" disabled>Run</button>
+    <div style="clear: both;"></div>
+    <pre id="results"></pre>
   </body>
 </html>
