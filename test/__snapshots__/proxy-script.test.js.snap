@@ -1,0 +1,16 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`proxy-test transpiler uses fixed wrapper alias 1`] = `
+"\\"use strict\\";
+
+const myWrap = _wrap;
+const myCall = _call;
+const myAssign = _assign;
+const myBlockBegin = _blockBegin;
+const myBlockEnd = _blockEnd;
+return (async () => {
+  myWrap({}).foo;
+})();"
+`;
+
+exports[`proxy-test using with to shadow wrapper fails 1`] = `"Strict mode code may not include a with statement"`;

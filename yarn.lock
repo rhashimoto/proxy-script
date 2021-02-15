@@ -319,6 +319,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@babel/standalone@npm:^7.12.16":
+  version: 7.12.16
+  resolution: "@babel/standalone@npm:7.12.16"
+  checksum: 4caaa527178aeeb01668e4481b239d33c6c0d85adb933315fb2c675c3c7abb224c3d708e2b52e9123c118c20be203c52f4ca0e168aa3b8d7ef9d6288b3cd9612
+  languageName: node
+  linkType: hard
+
 "@babel/template@npm:^7.12.13, @babel/template@npm:^7.3.3":
   version: 7.12.13
   resolution: "@babel/template@npm:7.12.13"
@@ -4697,6 +4704,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "proxy-script@workspace:."
   dependencies:
+    "@babel/standalone": ^7.12.16
     "@rollup/plugin-commonjs": ^17.1.0
     "@types/jest": ^26.0.20
     "@web/dev-server": ^0.1.7

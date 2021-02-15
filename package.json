@@ -4,9 +4,11 @@
   "main": "docs/dist/proxy-script.js",
   "scripts": {
     "build": "rollup -c",
-    "serve": "web-dev-server --port 5000"
+    "serve": "web-dev-server --port 5000",
+    "test": "jest"
   },
   "devDependencies": {
+    "@babel/standalone": "^7.12.16",
     "@rollup/plugin-commonjs": "^17.1.0",
     "@types/jest": "^26.0.20",
     "@web/dev-server": "^0.1.7",
