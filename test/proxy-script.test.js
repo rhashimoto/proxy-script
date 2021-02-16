@@ -415,7 +415,6 @@ describe('proxy-test', () => {
 
   test('literal member expression', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       return 'abc'.repeat(3);
     `);
@@ -429,7 +428,6 @@ describe('proxy-test', () => {
 
   test('Object.defineProperty() works on user object', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       class MyMap extends Map {
         constructor() { super(); }
@@ -448,7 +446,6 @@ describe('proxy-test', () => {
 
   test('Object.defineProperty() rejects on global object', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       const MyMap = Map;
       Object.defineProperty(MyMap.prototype, 'foo', {
@@ -465,7 +462,6 @@ describe('proxy-test', () => {
 
   test('Object.deleteProperty() works on user object', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       class MyMap {
         has() { return true; }
@@ -483,7 +479,6 @@ describe('proxy-test', () => {
 
   test('Object.deleteProperty() rejects on global object', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       const MyMap = Map;
 
@@ -499,7 +494,6 @@ describe('proxy-test', () => {
 
   test('map succeeds with whitelisted functions', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       return [42, '42', Math.sqrt(-1)].map(isNaN);
     `);
@@ -510,7 +504,6 @@ describe('proxy-test', () => {
 
   test('map rejects with non-whitelisted functions', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       return [42, '42', Math.sqrt(-1)].map(isNaN);
     `);
@@ -522,7 +515,6 @@ describe('proxy-test', () => {
 
   test('bind succeeds with whitelisted functions', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       const f = Array.prototype.reverse.bind([1, 2, 3]);
       return f();
@@ -534,7 +526,6 @@ describe('proxy-test', () => {
 
   test('bind rejects with non-whitelisted functions', async () => {
     const transpiler = new Transpiler();
-    transpiler.babelOptions.parserOpts.strictMode = false;
     const transpiled = transpiler.transpile(`
       const f = Array.prototype.reverse.bind([1, 2, 3]);
       return f();
@@ -542,6 +533,20 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Array.prototype.reverse);
     const result = runtime.run(transpiled);
+    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+  });
+
+  test('calling blacklisted non-global function rejects', async () => {
+    const transpiler = new Transpiler();
+    const transpiled = transpiler.transpile(`
+      blacklisted();
+    `);
+
+    function blacklisted() {
+    }
+    const runtime = new Runtime();
+    runtime.blacklist.add(blacklisted);
+    const result = runtime.run(transpiled, null, { blacklisted });
     await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
   });
 });
