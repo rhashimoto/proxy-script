@@ -95,6 +95,19 @@ by default because access to any DOM object opens another
 universe of objects and functions, some of which might not
 have been reached via the global object traversal.
 
+### Attacker suggestions
+* Look for a way to invoke the Function or AsyncFunction
+constructor. This is the most direct way to escape the sandbox.
+* Look for a way to access a platform object that isn't
+marked as a global object. Use of this object will bypass the
+whitelist, and data can be stored in it that could persist
+across Runtime invocations. Methods can be made inoperable,
+though useful hijacking is probably not possible because
+few transpiled functions will work outside the runtime.
+* Look for a bug in the Transpiler plugin (or Babel itself)
+that causes some expression that should be wrapped not to
+be wrapped.
+
 ## Recommendations
 Defense in depth:
 * If possible, put the Runtime in its own JavaScript context,
