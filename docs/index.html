@@ -24,7 +24,7 @@
       async function runScript(script) {
         try {
           const transpiled = transpiler.transpile(script);
-          const result = await runtime.run(transpiled)
+          const result = await runtime.run(transpiled);
 
           document.getElementById('results').textContent = JSON.stringify(result, null, 2);
         } catch (error) {
@@ -36,13 +36,13 @@
       // Everything below this point is setup for the editor and button to
       // call the function above with a script to run.
 
-      const initialSource = `
+      const initialSource = window.location.hash ?
+        decodeURIComponent(window.location.hash).substring(1) : `
 // Enter JavaScript here and click the Run button to execute
 // in a proxy-script sandbox. The return value or exception
 // will be shown below.
-//
-// Open the browser Developer Tools to see console.log output
-// or enter the debugger using a 'debugger' statement.
+console.log('Open the Developer Tools console to see this output.');
+debugger; // When open, Developer Tools will pause execution here.
 return 'Hello, world!';
       `.trim();
 
@@ -78,7 +78,9 @@ return 'Hello, world!';
         const runButton = document.getElementById('run');
         runButton.removeAttribute('disabled');
         runButton.addEventListener('click', async (event) => {
-          await runScript(editor.getValue());
+          const source = editor.getValue();
+          window.location.hash = encodeURIComponent(source)
+          await runScript(source);
         });
       });
     </script>
