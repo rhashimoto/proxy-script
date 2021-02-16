@@ -211,13 +211,11 @@ export class Runtime {
     this.blacklist.add(eval);
 
     args = Object.assign({}, args, {
-      '_wrap':       this.maybeWrap.bind(this),
-      '_call':       this.call.bind(this)
+      '_wrap': this.maybeWrap.bind(this),
+      '_call': this.call.bind(this)
     });
-    const [keys, values] = Object.entries(args)
-      .reduce((result, pair) => [[...result[0], pair[0]], [...result[1], pair[1]]], [[], []]);
-    const f = new Function(...keys, transpiled.code);
-    return await f.call(thisArg, ...values);
+    const f = new Function(...Object.keys(args), transpiled.code);
+    return await f.call(thisArg, ...Object.values(args));
   }
 
   /**
