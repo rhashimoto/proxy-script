@@ -1,3 +1,5 @@
+// Copyright 2021 Roy T. Hashimoto. All rights reserved.
+
 const NO_WRAP_NEEDED = new Set([
   // These types cannot be wrapped with a Proxy. This is only an
   // optimization as the wrapper checks for this.
@@ -141,6 +143,8 @@ Transpiler.register = function(babel) {
 function createRandomString() {
   return Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(36);
 }
+
+// Copyright 2021 Roy T. Hashimoto. All rights reserved.
 
 // Make sure some definitions exist.
 // @ts-ignore

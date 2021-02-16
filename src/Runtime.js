@@ -1,3 +1,5 @@
+// Copyright 2021 Roy T. Hashimoto. All rights reserved.
+
 // Make sure some definitions exist.
 // @ts-ignore
 const btoa = globalThis.btoa ?? (s => Buffer.from(s).toString('base64'));

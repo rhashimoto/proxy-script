@@ -1,3 +1,5 @@
+// Copyright 2021 Roy T. Hashimoto. All rights reserved.
+
 import * as Babel from '@babel/standalone';
 import { Transpiler, Runtime } from '../src/index';
 
