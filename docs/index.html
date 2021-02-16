@@ -36,6 +36,7 @@
       // Everything below this point is setup for the editor and button to
       // call the function above with a script to run.
 
+      // Get initial code from URL hash.
       const initialSource = window.location.hash ?
         decodeURIComponent(window.location.hash).substring(1) : `
 // Enter JavaScript here and click the Run button to execute
@@ -47,27 +48,22 @@ return 'Hello, world!';
       `.trim();
 
       require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.22.3/min/vs' }});
-      // @ts-ignore
       require(['vs/editor/editor.main'], function() {
-        // @ts-ignore
         monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
           noSemanticValidation: false,
           noSyntaxValidation: false,
           diagnosticCodesToIgnore: [
             /* top-level return */ 1108,
-            /* top-level await */ 1375, 1378
+            /* top-level await */ 1378
           ]
         });
         
-        // @ts-ignore
         monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
-          // @ts-ignore
           target: monaco.languages.typescript.ScriptTarget.ES2020,
           alwaysStrict: true,
           allowNonTsExtensions: true
         });
         
-        // @ts-ignore
         const editor = monaco.editor.create(document.getElementById('editor-container'), {
           value: initialSource,
           language: 'javascript',
@@ -79,6 +75,8 @@ return 'Hello, world!';
         runButton.removeAttribute('disabled');
         runButton.addEventListener('click', async (event) => {
           const source = editor.getValue();
+
+          // Put code into URL hash.
           window.location.hash = encodeURIComponent(source)
           await runScript(source);
         });
