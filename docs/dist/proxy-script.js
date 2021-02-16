@@ -24,6 +24,8 @@ const NO_WRAP_NEEDED = new Set([
   'Super'
 ]);
 
+let Babel;
+
 function plugin({ types, template }, options) {
   const bindings = Object.assign({
     wrap: '_w' + createRandomString(),
@@ -105,7 +107,7 @@ function plugin({ types, template }, options) {
 }
 
 class Transpiler {
-  babel = globalThis.Babel;
+  babel = Babel;
   babelOptions = {
     parserOpts: {
       strictMode: true,
@@ -119,8 +121,6 @@ class Transpiler {
    * @param {{ bindings?: object }} [options] 
    */
   constructor(options = {}) {
-    // Configure the transpiler plugin.
-    Object.assign({}, options);
     // @ts-ignore
     this.babelOptions.plugins.push(['proxy-script', options]);
   }
@@ -134,6 +134,7 @@ class Transpiler {
   }
 }
 Transpiler.register = function(babel) {
+  Babel = babel;
   babel.registerPlugin('proxy-script', plugin);
 };
 
