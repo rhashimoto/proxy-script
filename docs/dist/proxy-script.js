@@ -144,6 +144,126 @@ function createRandomString() {
   return Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(36);
 }
 
+class SourceMap {
+  groups = [];
+
+  constructor(map) {
+    // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
+    /** @type {number?} */ let sourcesIndex = null;
+    /** @type {number?} */ let sourceLine = null;
+    /** @type {number?} */ let sourceColumn = null;
+    /** @type {number?} */ let namesIndex = null;
+    map.mappings.split(';').forEach(group => {
+      /** @type {number?} */ let startColumn = null;
+      this.groups.push(group.split(',').map(segment => {
+        const fields = parseSegment(segment);
+        switch (fields.length) {
+          case 5:
+            namesIndex += fields[4];
+          case 4:
+            sourceColumn += fields[3];
+          case 3:
+            sourceLine += fields[2];
+          case 2:
+            sourcesIndex += fields[1];
+          case 1:
+            startColumn += fields[0];
+        }
+        return {
+          startColumn,
+          source: map.sources[sourcesIndex],
+          sourceLine,
+          sourceColumn,
+          name: map.names[namesIndex]
+        };
+      }));
+
+      // Sort segments in a group by decreasing startColumn for easier lookup.
+      this.groups.forEach(group => group.sort((a, b) => {
+        return a.startColumn >= b.startColumn ? -1 : 1;
+      }));
+    });
+  }
+
+  /**
+   * Returns original source zero-based location.
+   * @param {number} line zero-based line in generated code
+   * @param {number} column zero-based column in generated code
+   */
+  locate(line, column) {
+    const group = this.groups[line] || [];
+    return group.find(segment => segment.startColumn <= column);
+  }
+
+  patchStackTrace(trace) {
+    return trace.split('\n')
+      // TODO: Add processing for Firefox. Edge is Chromium/V8 based so
+      // should already work (but should be checked). Safari doesn't have
+      // useful stack traces for `new Function()`.
+      .map(frame => this.patchV8(frame))
+      .join('\n');
+  }
+
+  patchV8(frame) {
+    const m = frame.match(/^(.*at )eval .*<anonymous>:(\d+):(\d+)/);
+    if (m) {
+      const line = parseInt(m[2]) - 1;
+      const column = parseInt(m[3]);
+      const location = this.locate(line, column);
+      if (location) {
+        return `${m[1]}${location.source}:${location.sourceLine + 1}:${location.sourceColumn}`;
+      }
+    }
+    return frame;
+  }
+}
+
+/**
+ * @param {string} trace stack trace from Error.stack
+ * @param {object} map source map
+ * @returns {string} patched stack strace
+ */
+SourceMap.patchStackTrace = (trace, map) => {
+  const sourceMap = new SourceMap(map);
+  return sourceMap.patchStackTrace(trace);
+};
+
+const BASE_64 = new Map([
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+  'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+  'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+  'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'
+].map((c, i) => [c, i]));
+
+/**
+ * @param {string} segment 
+ * @returns {Array<number>} segment numeric fields
+ */
+function parseSegment(segment) {
+  const fields = [];
+
+  // Parse VLQs (top bit of digit is continuation bit, LSB of first
+  // digit is sign bit). This code only works to 31-bit values instead
+  // of the specified 32-bits, which is not expected to be a problem.
+  let nBits = 0;
+  let value = 0;
+  for (const c of segment) {
+    const data = BASE_64.get(c);
+    if (data === undefined) throw new Error('invalid base64');
+
+    value += (data & 0x1f) << nBits;
+    nBits += 5;
+    if ((data & 0x20) === 0) {
+      const sign = (value & 0x1) ? -1 : 1;
+      fields.push(sign * (value >>> 1));
+      nBits = value = 0;
+    }
+  }
+
+  return fields;
+}
+
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
 
 // Make sure some definitions exist.
@@ -188,10 +308,6 @@ const SOURCEMAP_OFFSET = (function() {
   const lines = new Function('debugger').toString().split('\n');
   return lines.findIndex(line => line.includes('debugger'));
 })();
-
-// Transpiler output is post-processed so its sourcemaps work properly.
-// Post-processed output is tagged with this Symbol.
-const PREPARED = Symbol('prepared');
 
 class Runtime {
   /**
@@ -317,39 +433,11 @@ class Runtime {
 
   /**
    * @param {{code: string, map?: object}} transpiled 
+   * @param {object?} thisArg
+   * @param {object} args 
+   * @returns {Promise}
    */
-  prepare(transpiled) {
-    if (transpiled[PREPARED]) return transpiled;
-
-    // Add an inline sourcemap if possible.
-    let code = transpiled.code;
-    const map = transpiled.map && Object.assign({}, transpiled.map);
-    if (map && map.version === 3) {
-      // Patch sourcemap for insertions by Function constructor.
-      // We only need to prepend a semicolon to `mappings` for each line
-      // of code added at the start.
-      // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
-      map.mappings = new Array(SOURCEMAP_OFFSET).fill(';').join('') + map.mappings;
-
-      // Add the sourcemap inline to the code.
-      const json = JSON.stringify(map);
-      const url = `data:application/json;charset=utf-8;base64,${btoa(json)}`;
-      if (url.length < 2 ** 23) {
-        code += `\n//# sourceMappingURL=${url}`;
-      } else {
-        console.warn(`proxy-script sourcemap omitted due to size (${url.length} bytes)`);
-      }
-    }
-    return { code, map, [PREPARED]: true };
-  }
-
-  /**
-   * @param {{code: string, map?: object}} transpiled 
-   * @param {object?} [thisArg]
-   * @param {object} [args] 
-   */
-  async runPrepared(transpiled, thisArg, args = {}) {
-    console.assert(transpiled[PREPARED], 'running unprepared code');
+  async run(transpiled, thisArg, args) {
     this.whitelist.add = () => {
       throw new Error('whitelist modification after run');
     };
@@ -357,31 +445,58 @@ class Runtime {
     this.blacklist.add(AsyncFunction);
     this.blacklist.add(eval);
 
+    transpiled = Runtime.prepare(transpiled);
     args = Object.assign({}, args, {
       '_wrap': this.maybeWrap.bind(this),
       '_call': this.call.bind(this)
     });
     const f = new Function(...Object.keys(args), transpiled.code);
-    return await f.call(thisArg, ...Object.values(args));
-  }
-
-  /**
-   * @param {{code: string, map?: object}} transpiled 
-   * @param {object?} thisArg
-   * @param {object} args 
-   * @returns {Promise}
-   */
-  run(transpiled, thisArg, args) {
-    if (!transpiled[PREPARED]) {
-      transpiled = this.prepare(transpiled);
+    try {
+      return await f.call(thisArg, ...Object.values(args));
+    } catch (e) {
+      if (e === Object(e) && typeof e.stack === 'string') {
+        e.stack = SourceMap.patchStackTrace(e.stack, transpiled.map);
+      }
+      throw e;
     }
-    return this.runPrepared(transpiled, thisArg, args);
   }
 }
 Runtime.Error = class extends Error {
   constructor(message) {
     super(message);
   }
+};
+
+const PREPARED = Symbol('prepared');
+/**
+ * Patch sourcemap and attach inline to code.
+ * @param {{code: string, map?: object}} transpiled 
+ */
+Runtime.prepare = function(transpiled) {
+  if (transpiled[PREPARED]) return transpiled;
+  transpiled = Object.assign({}, transpiled, { [PREPARED]: true });
+
+  // Add an inline sourcemap if possible.
+  if (transpiled.map?.version === 3) {
+    const map = transpiled.map = Object.assign({}, transpiled.map);
+
+    // Patch sourcemap for insertions by Function constructor.
+    // We only need to prepend a semicolon to `mappings` for each line
+    // of code added at the start.
+    // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
+    map.sources = ['proxy-script'];
+    map.mappings = new Array(SOURCEMAP_OFFSET).fill(';').join('') + map.mappings;
+
+    // Add the sourcemap inline to the code.
+    const json = JSON.stringify(map);
+    const url = `data:application/json;charset=utf-8;base64,${btoa(json)}`;
+    if (url.length < 2 ** 23) {
+      transpiled.code += `\n//# sourceMappingURL=${url}`;
+    } else {
+      console.warn(`proxy-script sourcemap omitted due to size (${url.length} bytes)`);
+    }
+  }
+  return transpiled;
 };
 
 /**

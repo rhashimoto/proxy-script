@@ -22,13 +22,14 @@
       const runtime = new Runtime();
 
       async function runScript(script) {
+        let transpiled;
         try {
-          const transpiled = transpiler.transpile(script);
+          transpiled = transpiler.transpile(script);
+          transpiled = Runtime.prepare(transpiled);
           const result = await runtime.run(transpiled);
 
           document.getElementById('results').textContent = JSON.stringify(result, null, 2);
         } catch (error) {
-          // TODO: relocate error through sourcemap
           document.getElementById('results').textContent = error.stack;
         }
       };

@@ -1,5 +1,7 @@
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
 
+import { SourceMap } from './SourceMap.js';
+
 // Make sure some definitions exist.
 // @ts-ignore
 const btoa = globalThis.btoa ?? (s => Buffer.from(s).toString('base64'));
@@ -42,10 +44,6 @@ const SOURCEMAP_OFFSET = (function() {
   const lines = new Function('debugger').toString().split('\n');
   return lines.findIndex(line => line.includes('debugger'));
 })();
-
-// Transpiler output is post-processed so its sourcemaps work properly.
-// Post-processed output is tagged with this Symbol.
-const PREPARED = Symbol('prepared');
 
 export class Runtime {
   /**
@@ -171,39 +169,11 @@ export class Runtime {
 
   /**
    * @param {{code: string, map?: object}} transpiled 
+   * @param {object?} thisArg
+   * @param {object} args 
+   * @returns {Promise}
    */
-  prepare(transpiled) {
-    if (transpiled[PREPARED]) return transpiled;
-
-    // Add an inline sourcemap if possible.
-    let code = transpiled.code;
-    const map = transpiled.map && Object.assign({}, transpiled.map);
-    if (map && map.version === 3) {
-      // Patch sourcemap for insertions by Function constructor.
-      // We only need to prepend a semicolon to `mappings` for each line
-      // of code added at the start.
-      // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
-      map.mappings = new Array(SOURCEMAP_OFFSET).fill(';').join('') + map.mappings;
-
-      // Add the sourcemap inline to the code.
-      const json = JSON.stringify(map);
-      const url = `data:application/json;charset=utf-8;base64,${btoa(json)}`;
-      if (url.length < 2 ** 23) {
-        code += `\n//# sourceMappingURL=${url}`;
-      } else {
-        console.warn(`proxy-script sourcemap omitted due to size (${url.length} bytes)`);
-      }
-    }
-    return { code, map, [PREPARED]: true };
-  }
-
-  /**
-   * @param {{code: string, map?: object}} transpiled 
-   * @param {object?} [thisArg]
-   * @param {object} [args] 
-   */
-  async runPrepared(transpiled, thisArg, args = {}) {
-    console.assert(transpiled[PREPARED], 'running unprepared code');
+  async run(transpiled, thisArg, args) {
     this.whitelist.add = () => {
       throw new Error('whitelist modification after run');
     };
@@ -211,25 +181,20 @@ export class Runtime {
     this.blacklist.add(AsyncFunction);
     this.blacklist.add(eval);
 
+    transpiled = Runtime.prepare(transpiled);
     args = Object.assign({}, args, {
       '_wrap': this.maybeWrap.bind(this),
       '_call': this.call.bind(this)
     });
     const f = new Function(...Object.keys(args), transpiled.code);
-    return await f.call(thisArg, ...Object.values(args));
-  }
-
-  /**
-   * @param {{code: string, map?: object}} transpiled 
-   * @param {object?} thisArg
-   * @param {object} args 
-   * @returns {Promise}
-   */
-  run(transpiled, thisArg, args) {
-    if (!transpiled[PREPARED]) {
-      transpiled = this.prepare(transpiled);
+    try {
+      return await f.call(thisArg, ...Object.values(args));
+    } catch (e) {
+      if (e === Object(e) && typeof e.stack === 'string') {
+        e.stack = SourceMap.patchStackTrace(e.stack, transpiled.map);
+      }
+      throw e;
     }
-    return this.runPrepared(transpiled, thisArg, args);
   }
 };
 
@@ -238,6 +203,38 @@ Runtime.Error = class extends Error {
     super(message);
   }
 };
+
+const PREPARED = Symbol('prepared');
+/**
+ * Patch sourcemap and attach inline to code.
+ * @param {{code: string, map?: object}} transpiled 
+ */
+Runtime.prepare = function(transpiled) {
+  if (transpiled[PREPARED]) return transpiled;
+  transpiled = Object.assign({}, transpiled, { [PREPARED]: true });
+
+  // Add an inline sourcemap if possible.
+  if (transpiled.map?.version === 3) {
+    const map = transpiled.map = Object.assign({}, transpiled.map);
+
+    // Patch sourcemap for insertions by Function constructor.
+    // We only need to prepend a semicolon to `mappings` for each line
+    // of code added at the start.
+    // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
+    map.sources = ['proxy-script'];
+    map.mappings = new Array(SOURCEMAP_OFFSET).fill(';').join('') + map.mappings;
+
+    // Add the sourcemap inline to the code.
+    const json = JSON.stringify(map);
+    const url = `data:application/json;charset=utf-8;base64,${btoa(json)}`;
+    if (url.length < 2 ** 23) {
+      transpiled.code += `\n//# sourceMappingURL=${url}`;
+    } else {
+      console.warn(`proxy-script sourcemap omitted due to size (${url.length} bytes)`);
+    }
+  }
+  return transpiled;
+}
 
 /**
  * Update collection of global objects in case of additions to the
