@@ -257,7 +257,6 @@ class Runtime {
 
     construct: (target, args, newTarget) => {
       this.assertAccess(target, 'construct');
-      // https://stackoverflow.com/a/49739161/1462337
       return Reflect.construct(target, args, newTarget);
     },
 
@@ -272,11 +271,11 @@ class Runtime {
       return member;
     },
 
-    defineProperty() { throw new Error('proxy-script defineProperty violation'); },
-    deleteProperty() { throw new Error('proxy-script deleteProperty violation'); },
-    preventExtensions() { throw new Error('proxy-script preventExtensions violation'); },
-    set() { throw new Error('proxy-script set violation'); },
-    setPrototypeOf() { throw new Error('proxy-script setPrototypeOf violation'); },
+    defineProperty() { throw new Runtime.Error('defineProperty violation'); },
+    deleteProperty() { throw new Runtime.Error('deleteProperty violation'); },
+    preventExtensions() { throw new Runtime.Error('preventExtensions violation'); },
+    set() { throw new Runtime.Error('set violation'); },
+    setPrototypeOf() { throw new Runtime.Error('setPrototypeOf violation'); },
   };
   
   /**
@@ -286,7 +285,7 @@ class Runtime {
    */
   maybeWrap(obj) {
     if (obj !== Object(obj)) return obj;
-    if (this.blacklist.has(obj)) throw new Error('proxy-script blacklist violation');
+    if (this.blacklist.has(obj)) throw new Runtime.Error('blacklist violation');
     if (!GLOBALS.has(obj)) return obj;
 
     if (this.mapObjectToProxy.has(obj)) {
@@ -312,7 +311,7 @@ class Runtime {
 
   assertAccess(obj, type = 'access') {
     if (GLOBALS.has(obj) && !this.whitelist.has(obj)) {
-      throw new Error(`proxy-script ${type} violation`);
+      throw new Runtime.Error(`${type} violation`);
     }
   }
 
@@ -380,10 +379,8 @@ class Runtime {
   }
 }
 Runtime.Error = class extends Error {
-  constructor(message, { line, column }) {
-    super(`${message} (${line}:${column})`);
-    this.line = line;
-    this.column = column;
+  constructor(message) {
+    super(message);
   }
 };
 

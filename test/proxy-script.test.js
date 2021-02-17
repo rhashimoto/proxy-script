@@ -75,7 +75,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(isFinite);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime allows whitelisted static object call', async () => {
@@ -94,7 +94,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Math.pow);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime allows whitelisted construction', async () => {
@@ -113,7 +113,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Array);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime allows whitelisted methods', async () => {
@@ -140,7 +140,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Map.prototype.set);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
 });
 
   test('runtime rejects global object mutation', async () => {
@@ -150,7 +150,7 @@ describe('proxy-test', () => {
       const transpiled = transpiler.transpile('Object.assign = null;');
       const runtime = new Runtime();
       const result = runtime.run(transpiled);
-      await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+      await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
     }  
     {
       // Assigning to a new property.
@@ -158,7 +158,7 @@ describe('proxy-test', () => {
       const transpiled = transpiler.transpile('Object.brandNewProperty = null;');
       const runtime = new Runtime();
       const result = runtime.run(transpiled);
-      await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+      await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
     }  
   });
 
@@ -180,7 +180,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Object); // remove Object from whitelist
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime rejects Object.assign() to global', async () => {
@@ -188,7 +188,7 @@ describe('proxy-test', () => {
     const transpiled = transpiler.transpile(`Object.assign(Object, { foo: 0 })`);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime rejects calling eval', async () => {
@@ -199,7 +199,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.add(eval);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime rejects Function constructor', async () => {
@@ -210,7 +210,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.add(Function);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime rejects indirect Function construction', async () => {
@@ -221,7 +221,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.add((() => {}).constructor);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime rejects indirect AsyncFunction construction', async () => {
@@ -231,7 +231,7 @@ describe('proxy-test', () => {
     `);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('shadowing wrapper function fails', async () => {
@@ -251,7 +251,7 @@ describe('proxy-test', () => {
     `);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('function arguments are access checked', async () => {
@@ -265,7 +265,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Math.pow);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('code inside functions is access checked', async () => {
@@ -279,7 +279,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Math.pow);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('Promise inside function works', async () => {
@@ -323,7 +323,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Array.prototype.map);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('Function.prototype.apply method rejects for non-whitelisted function', async () => {
@@ -334,7 +334,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Array.prototype.map);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('runtime allows nested Promise.resolve() inside function', async () => {
@@ -372,7 +372,7 @@ describe('proxy-test', () => {
     `);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('prefix/postfix update (++ and --)', async () => {
@@ -459,7 +459,7 @@ describe('proxy-test', () => {
     `);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('Object.deleteProperty() works on user object', async () => {
@@ -491,7 +491,7 @@ describe('proxy-test', () => {
     `);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('map succeeds with whitelisted functions', async () => {
@@ -512,7 +512,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(isNaN);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('bind succeeds with whitelisted functions', async () => {
@@ -535,7 +535,7 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Array.prototype.reverse);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
   test('calling blacklisted non-global function rejects', async () => {
@@ -549,6 +549,6 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.blacklist.add(blacklisted);
     const result = runtime.run(transpiled, null, { blacklisted });
-    await expect(result.catch(e => e.message)).resolves.toMatch(/proxy-script/);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 });
