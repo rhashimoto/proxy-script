@@ -85,17 +85,8 @@ function plugin({ types, template }, options) {
           return;
         }
 
-        // Don't bother wrapping an expression whose value is discarded.
-        if (path.parentPath.isExpressionStatement({ expression: path.node })) return;
-
-        path.replaceWith(wrap({ NODE: path.node }));
-      },
-
       // Use helper function for method calls.
-      CallExpression(path) {
-        if (!path.node.loc) return;
-
-        if (path.get('callee').isMemberExpression()) {
+        if (path.isCallExpression() && path.get('callee').isMemberExpression()) {
           const callee = path.node.callee;
           path.replaceWith(call({
             OBJECT: callee.object,
@@ -103,6 +94,11 @@ function plugin({ types, template }, options) {
             ARGS: path.node.arguments
           }));
         }
+
+        // Don't bother wrapping an expression whose value is discarded.
+        if (path.parentPath.isExpressionStatement({ expression: path.node })) return;
+
+        path.replaceWith(wrap({ NODE: path.node }));
       }
     }
   }
