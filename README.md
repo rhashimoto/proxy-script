@@ -5,10 +5,17 @@ JavaScript context. It has two goals:
 * Prevent changes to objects in the global scope.
 * Prevent calls to non-whitelisted external functions.
 
-Limiting resource usage, e.g. memory or CPU cycles, is *not* an
-explicit goal, though some limits can be achieved with this framework.
+Limiting resource usage, e.g. memory or CPU cycles, is not an
+explicit goal, though some limits are possible with this framework.
 
 [Try it](https://rhashimoto.github.io/proxy-script/)!
+
+## Features
+* Minimal API.
+* Extensible (examples TBD).
+* Debuggable with browser Developer Tools.
+* Transpiler and Runtime can be in separate JavaScript contexts.
+* Alternative licensing negotiable.
 
 ## Getting started
 Install from GitHub with `yarn add proxy-script@rhashimoto/proxy-script`.
