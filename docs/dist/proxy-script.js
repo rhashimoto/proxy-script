@@ -205,13 +205,13 @@ class SourceMap {
   }
 
   patchV8(frame) {
-    const m = frame.match(/^(.*at )eval .*<anonymous>:(\d+):(\d+)/);
+    const m = frame.match(/^(.*eval at run .*)<anonymous>:(\d+):(\d+)/);
     if (m) {
       const line = parseInt(m[2]) - 1;
       const column = parseInt(m[3]);
       const location = this.locate(line, column);
       if (location) {
-        return `${m[1]}${location.source}:${location.sourceLine + 1}:${location.sourceColumn}`;
+        return `${m[1]}<${location.source}>:${location.sourceLine + 1}:${location.sourceColumn})`;
       }
     }
     return frame;
