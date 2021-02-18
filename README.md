@@ -1,4 +1,6 @@
 # proxy-script
+[![Node.js CI](https://github.com/rhashimoto/proxy-script/actions/workflows/node.js.yml/badge.svg)](https://github.com/rhashimoto/proxy-script/actions/workflows/node.js.yml)
+
 This module allows running untrusted JavaScript within a regular
 JavaScript context. It has two goals:
 
