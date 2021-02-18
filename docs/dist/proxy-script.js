@@ -200,10 +200,10 @@ class SourceMap {
 
   patchStackTrace(trace) {
     return trace.split('\n')
-      // TODO: Add processing for Firefox. Edge is Chromium/V8 based so
-      // should already work (but should be checked). Safari doesn't have
-      // useful stack traces for `new Function()`.
+      // Apply Javascript implementation-specific patches.
+      // Safari doesn't have useful stack traces for `new Function()`.
       .map(frame => this.patchV8(frame))
+      .map(frame => this.patchFirefox(frame))
       .join('\n');
   }
 
@@ -216,6 +216,20 @@ class SourceMap {
       const location = this.locate(line, column);
       if (location) {
         return `${m[1]}<${location.source}>:${location.sourceLine + 1}:${location.sourceColumn})`;
+      }
+    }
+    return frame;
+  }
+
+  patchFirefox(frame) {
+    const m = frame.match(/^(.* )Function:(\d+):(\d+)$/);
+    if (m) {
+      // Note adjustments for 1-based line numbers.
+      const line = parseInt(m[2]) - 1;
+      const column = parseInt(m[3]);
+      const location = this.locate(line, column);
+      if (location) {
+        return `${m[1]}<${location.source}>:${location.sourceLine + 1}:${location.sourceColumn}`;
       }
     }
     return frame;
