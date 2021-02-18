@@ -1,10 +1,7 @@
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
-
 import { SourceMap } from './SourceMap.js';
 
 // Make sure some definitions exist.
-// @ts-ignore
-const btoa = globalThis.btoa ?? (s => Buffer.from(s).toString('base64'));
 const AsyncFunction = (async () => {}).constructor;
 
 // Enumerate global objects and their properties.
@@ -36,14 +33,6 @@ function getGlobals(obj, key) {
     }
   }
 }
-
-// Determine number of lines inserted by Function constructor. We need
-// this information to patch the sourcemap for browser Dev Tools, and
-// it varies with the Javascript implementation.
-const SOURCEMAP_OFFSET = (function() {
-  const lines = new Function('debugger').toString().split('\n');
-  return lines.findIndex(line => line.includes('debugger'));
-})();
 
 export class Runtime {
   /**
@@ -218,19 +207,15 @@ Runtime.prepare = function(transpiled) {
     const map = transpiled.map = Object.assign({}, transpiled.map);
 
     // Patch sourcemap for insertions by Function constructor.
-    // We only need to prepend a semicolon to `mappings` for each line
-    // of code added at the start.
-    // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
     map.sources = ['proxy-script'];
-    map.mappings = new Array(SOURCEMAP_OFFSET).fill(';').join('') + map.mappings;
+    SourceMap.patchMapForFunctionWrapper(map);
 
     // Add the sourcemap inline to the code.
-    const json = JSON.stringify(map);
-    const url = `data:application/json;charset=utf-8;base64,${btoa(json)}`;
-    if (url.length < 2 ** 23) {
-      transpiled.code += `\n//# sourceMappingURL=${url}`;
+    const inline = SourceMap.createInline(map);
+    if (inline.length < 2 ** 23) {
+      transpiled.code += `\n${inline}`;
     } else {
-      console.warn(`proxy-script sourcemap omitted due to size (${url.length} bytes)`);
+      console.warn(`proxy-script sourcemap omitted due to size (${inline.length} bytes)`);
     }
   }
   return transpiled;

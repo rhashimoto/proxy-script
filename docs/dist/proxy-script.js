@@ -144,8 +144,16 @@ function createRandomString() {
   return Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(36);
 }
 
+// Determine number of lines inserted by Function constructor. We need
+// this information to patch the sourcemap for browser Dev Tools, and
+// it varies with the Javascript implementation.
+const SOURCEMAP_OFFSET = (function() {
+  const lines = new Function('debugger').toString().split('\n');
+  return lines.findIndex(line => line.includes('debugger'));
+})();
+
 class SourceMap {
-  groups = [];
+  _groups = [];
 
   constructor(map) {
     // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
@@ -155,19 +163,14 @@ class SourceMap {
     /** @type {number?} */ let namesIndex = null;
     map.mappings.split(';').forEach(group => {
       /** @type {number?} */ let startColumn = null;
-      this.groups.push(group.split(',').map(segment => {
+      this._groups.push(group.split(',').map(segment => {
         const fields = parseSegment(segment);
         switch (fields.length) {
-          case 5:
-            namesIndex += fields[4];
-          case 4:
-            sourceColumn += fields[3];
-          case 3:
-            sourceLine += fields[2];
-          case 2:
-            sourcesIndex += fields[1];
-          case 1:
-            startColumn += fields[0];
+          case 5: namesIndex   += fields[4];
+          case 4: sourceColumn += fields[3];
+          case 3: sourceLine   += fields[2];
+          case 2: sourcesIndex += fields[1];
+          case 1: startColumn  += fields[0];
         }
         return {
           startColumn,
@@ -179,7 +182,7 @@ class SourceMap {
       }));
 
       // Sort segments in a group by decreasing startColumn for easier lookup.
-      this.groups.forEach(group => group.sort((a, b) => {
+      this._groups.forEach(group => group.sort((a, b) => {
         return a.startColumn >= b.startColumn ? -1 : 1;
       }));
     });
@@ -191,7 +194,7 @@ class SourceMap {
    * @param {number} column zero-based column in generated code
    */
   locate(line, column) {
-    const group = this.groups[line] || [];
+    const group = this._groups[line] || [];
     return group.find(segment => segment.startColumn <= column);
   }
 
@@ -207,6 +210,7 @@ class SourceMap {
   patchV8(frame) {
     const m = frame.match(/^(.*eval at run .*)<anonymous>:(\d+):(\d+)/);
     if (m) {
+      // Note adjustments for 1-based line numbers.
       const line = parseInt(m[2]) - 1;
       const column = parseInt(m[3]);
       const location = this.locate(line, column);
@@ -219,6 +223,29 @@ class SourceMap {
 }
 
 /**
+ * Patch sourcemap for insertions by Function constructor.
+ * @param {object} map source map
+ */
+SourceMap.patchMapForFunctionWrapper = function(map) {
+  // Prepend a semicolon to `mappings` for each line of code added at
+  // the start.
+  map.mappings = new Array(SOURCEMAP_OFFSET).fill(';').join('') + map.mappings;
+};
+
+/**
+ * Build an inline map with a data URL.
+ * @param {*} map source map
+ */
+SourceMap.createInline = function(map) {
+  // @ts-ignore
+  const btoa = globalThis.btoa ?? (s => Buffer.from(s).toString('base64'));
+  const json = JSON.stringify(map);
+  const url = `data:application/json;charset=utf-8;base64,${btoa(json)}`;
+  return `//# sourceMappingURL=${url}`;
+};
+
+/**
+ * Translate stack trace locations through a source map.
  * @param {string} trace stack trace from Error.stack
  * @param {object} map source map
  * @returns {string} patched stack strace
@@ -228,6 +255,10 @@ SourceMap.patchStackTrace = (trace, map) => {
   return sourceMap.patchStackTrace(trace);
 };
 
+/**
+ * Map a base64 digit to its numeric value.
+ * @type {Map<string, number>}
+ */
 const BASE_64 = new Map([
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
   'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
@@ -267,8 +298,6 @@ function parseSegment(segment) {
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
 
 // Make sure some definitions exist.
-// @ts-ignore
-const btoa = globalThis.btoa ?? (s => Buffer.from(s).toString('base64'));
 const AsyncFunction = (async () => {}).constructor;
 
 // Enumerate global objects and their properties.
@@ -300,14 +329,6 @@ function getGlobals(obj, key) {
     }
   }
 }
-
-// Determine number of lines inserted by Function constructor. We need
-// this information to patch the sourcemap for browser Dev Tools, and
-// it varies with the Javascript implementation.
-const SOURCEMAP_OFFSET = (function() {
-  const lines = new Function('debugger').toString().split('\n');
-  return lines.findIndex(line => line.includes('debugger'));
-})();
 
 class Runtime {
   /**
@@ -481,19 +502,15 @@ Runtime.prepare = function(transpiled) {
     const map = transpiled.map = Object.assign({}, transpiled.map);
 
     // Patch sourcemap for insertions by Function constructor.
-    // We only need to prepend a semicolon to `mappings` for each line
-    // of code added at the start.
-    // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit
     map.sources = ['proxy-script'];
-    map.mappings = new Array(SOURCEMAP_OFFSET).fill(';').join('') + map.mappings;
+    SourceMap.patchMapForFunctionWrapper(map);
 
     // Add the sourcemap inline to the code.
-    const json = JSON.stringify(map);
-    const url = `data:application/json;charset=utf-8;base64,${btoa(json)}`;
-    if (url.length < 2 ** 23) {
-      transpiled.code += `\n//# sourceMappingURL=${url}`;
+    const inline = SourceMap.createInline(map);
+    if (inline.length < 2 ** 23) {
+      transpiled.code += `\n${inline}`;
     } else {
-      console.warn(`proxy-script sourcemap omitted due to size (${url.length} bytes)`);
+      console.warn(`proxy-script sourcemap omitted due to size (${inline.length} bytes)`);
     }
   }
   return transpiled;
