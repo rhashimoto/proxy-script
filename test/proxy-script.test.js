@@ -551,4 +551,16 @@ describe('proxy-test', () => {
     const result = runtime.run(transpiled, null, { blacklisted });
     await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
+
+  test('Error locations are translated with source map', async () => {
+    const transpiler = new Transpiler();
+    const transpiled = transpiler.transpile(`
+      // This comment is line 2.
+      throw new Error('this is line 3');
+    `);
+
+    const runtime = new Runtime();
+    const result = await runtime.run(transpiled).catch(e => e);
+    expect(result.stack).toMatch(/<proxy-script>:3/);
+  });
 });

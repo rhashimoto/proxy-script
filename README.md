@@ -62,9 +62,28 @@ wrapper functions.
 The transpiler is implemented as a Babel plug-in. It encapsulates
 the supplied code in an async
 [IIFE](https://developer.mozilla.org/en-US/docs/Glossary/IIFE)
-and wraps any expression that might be a global object in a
+and wraps any expression that *might* be a global object in a
 function call. The wrapper functions are called via random aliases
 so the untrusted code can't shadow them.
+
+For example, the transpiler converts this:
+
+```javascript
+console.log('Hello, world!');
+```
+
+...to this:
+
+```javascript
+"use strict";
+
+const _w1fwyyrlzeb7 = _wrap;
+const _c2689dnsyc57 = _call;
+return (async () => {
+  _c2689dnsyc57(_w1fwyyrlzeb7(console), 'log', 'Hello, world!');
+})();
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,...
+```
 
 ### Runtime
 The runtime implements the wrapper functions referenced in the
@@ -79,6 +98,14 @@ it is wrapped in a
 an exception is thrown.
 * If a proxied object is not found on the whitelist and is
 called as a constructor or function, an exception is thrown.
+
+In the above example, `console` is checked whether it is on the
+blacklist (no by default) and then whether it is a global object
+(yes) and wrapped in a Proxy. Its method `log` is checked
+whether it is on the blacklist (no by default) and then whether
+it is a global object (yes) and wrapped in a Proxy. When the
+function is called, its Proxy checks whether it is on the
+whitelist (yes by default) and makes the call.
 
 ### What is a "global object"?
 When the Runtime class is loaded it recursively traverses the
