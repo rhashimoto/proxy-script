@@ -31,7 +31,10 @@ let Babel;
 function plugin({ types, template }, options) {
   const bindings = Object.assign({
     wrap: '_w' + createRandomString(),
-    call: '_c' + createRandomString()
+    call: '_c' + createRandomString(),
+    func: '_f' + createRandomString(),
+    klass: '_k' + createRandomString(),
+    external: '_e' + createRandomString()
   }, options.bindings);
  
   // All object expressions are wrapped by a Proxy to prevent them from
@@ -45,7 +48,34 @@ function plugin({ types, template }, options) {
   // to handle Function.prototype.{call, apply}.
   const call = template.expression(`${bindings.call}(OBJECT, PROPERTY, ARGS)`, {
     placeholderPattern: /^(OBJECT|PROPERTY|ARGS)$/
-   });
+  });
+
+  // All function definitions are converted to lambdas (if not already a
+  // lambda) and registered using a wrapper.
+  const lambda = template.expression(`${bindings.func}(LAMBDA)`, {
+    placeholderPattern: /^(LAMBDA)$/
+  });
+
+  const convertToLambda = (id, node) => lambda({
+    LAMBDA: types.FunctionExpression(
+      id,
+      node.params,
+      node.body,
+      node.generator,
+      node.async)
+  });
+
+  const declaration = template.statement(`let ID = LAMBDA;`, {
+    placeholderPattern: /^(ID|LAMBDA)$/
+  });
+
+  const klass = template.statement(`${bindings.klass}(CLASS)`, {
+    placeholderPattern: /^(CLASS)$/
+  });
+
+  const external = template.expression(`${bindings.external}('NAME')`, {
+    placeholderPattern: /^(NAME)$/
+  });
 
   // Wrap the entire script in an Immediately Invoked Function Expression
   // to enable await and establish the wrapping function alias.
@@ -85,20 +115,74 @@ function plugin({ types, template }, options) {
           return;
         }
 
-      // Use helper function for method calls.
-        if (path.isCallExpression() && path.get('callee').isMemberExpression()) {
-          const callee = path.node.callee;
-          path.replaceWith(call({
-            OBJECT: callee.object,
-            PROPERTY: callee.computed ? callee.property : `'${callee.property.name}'`,
-            ARGS: path.node.arguments
-          }));
+        // Use helper function for calls.
+        if (path.isCallExpression()) {
+          const callee = path.get('callee');
+          if (callee.isMemberExpression()) {
+            // Private method calls are not transformed.
+            const property = callee.get('property');
+            if (!property.isPrivateName()) {
+              path.replaceWith(call({
+                OBJECT: callee.node.object,
+                PROPERTY: callee.node.computed ? property.node : `'${property.node.name}'`,
+                ARGS: path.node.arguments
+              }));
+            }
+          // } else if (!callee.isSuper()) {
+          //   // Not a method call, i.e. not bound to an object.
+          //   path.replaceWith(call({
+          //     OBJECT: callee.node,
+          //     PROPERTY: types.NullLiteral(),
+          //     ARGS: path.node.arguments
+          //   }));
+          }
         }
 
         // Don't bother wrapping an expression whose value is discarded.
         if (path.parentPath.isExpressionStatement({ expression: path.node })) return;
 
+        // Use a different wrapper for lambdas.
+        if (path.isFunctionExpression() || path.isArrowFunctionExpression()) {
+          path.replaceWith(lambda({ LAMBDA: path.node }));
+          return;
+        }
+        
+        // Fetch external references.
+        if (path.isIdentifier() && !path.scope.hasBinding(path.node.name, true)) {
+          path.replaceWith(external({ NAME: path.node.name }))
+        }
+
         path.replaceWith(wrap({ NODE: path.node }));
+      },
+
+      // Register user functions.
+      FunctionDeclaration(path) {
+        if (!path.node.loc) return;
+
+        path.replaceWith(declaration({
+          ID: path.node.id,
+          LAMBDA: convertToLambda(path.node.id, path.node)
+        }));
+      },
+      
+      // Register user functions.
+      ObjectMethod(path) {
+        if (!path.node.loc) return;
+
+        path.replaceWith(types.ObjectProperty(
+          path.node.key,
+          lambda({
+            LAMBDA: convertToLambda(null, path.node)
+          }),
+          path.node.computed
+        ));
+      },
+
+      // Register user functions.
+      ClassDeclaration(path) {
+        if (!path.node.loc) return;
+
+        path.insertAfter(klass({ CLASS: types.Identifier(path.node.id.name) }));
       }
     }
   }

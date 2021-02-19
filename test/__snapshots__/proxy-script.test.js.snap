@@ -5,9 +5,9 @@ exports[`proxy-test transpiler uses fixed wrapper alias 1`] = `
 
 const myWrap = _wrap;
 const myCall = _call;
-const myAssign = _assign;
-const myBlockBegin = _blockBegin;
-const myBlockEnd = _blockEnd;
+const myFunc = _func;
+const myKlass = _klass;
+const myExternal = _external;
 return (async () => {
   myWrap({}).foo;
 })();"
