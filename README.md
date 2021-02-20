@@ -77,10 +77,13 @@ console.log('Hello, world!');
 ```javascript
 "use strict";
 
-const _w1fwyyrlzeb7 = _wrap;
-const _c2689dnsyc57 = _call;
+const _w1vew3xapmlv = _wrap;
+const _crrz2kba773 = _call;
+const _f1drq3uzuusz = _func;
+const _kvu15058mep = _klass;
+const _eox4c74zksn = _external;
 return (async () => {
-  _c2689dnsyc57(_w1fwyyrlzeb7(console), 'log', 'Hello, world!');
+  _crrz2kba773(_w1vew3xapmlv(_eox4c74zksn("console")), 'log', 'Hello, world!');
 })();
 //# sourceMappingURL=data:application/json;charset=utf-8;base64,...
 ```
@@ -89,57 +92,36 @@ return (async () => {
 The runtime implements the wrapper functions referenced in the
 transpiled code. Basically, the wrappers do this:
 
-* If the wrapped expression is found on the blacklist, an
-exception is thrown.
 * If the wrapped expression is a "global object" (see below),
 it is wrapped in a
 [Proxy](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy).
+
 * If a proxied object is mutated (e.g. setting properties),
 an exception is thrown.
+
 * If a proxied object is not found on the whitelist and is
 called as a constructor or function, an exception is thrown.
 
 In the above example, `console` is checked whether it is on the
-blacklist (no by default) and then whether it is a global object
-(yes) and wrapped in a Proxy. Its method `log` is checked
-whether it is on the blacklist (no by default) and then whether
-it is a global object (yes) and wrapped in a Proxy. When the
-function is called, its Proxy checks whether it is on the
-whitelist (yes by default) and makes the call.
+whether it is a global object (yes) and wrapped in a Proxy. The method
+call is implemented by a support function that checks whether the
+member `log` is in the whitelist (yes by default) and makes
+the call.
 
 ### What is a "global object"?
 When the Runtime class is loaded it recursively traverses the
 object tree rooted at `globalThis` and adds everything it finds
-to its set of global objects.
+to its set of global objects. Anything found in the traversal
+cannot be mutated by the transpiled code.
 
-It is possible for there to be external objects provided by
-the Javascript platform that are not found by this recursive
-search. For example, the async function constructor, though
-referred to as
-[`AsyncFunction`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/AsyncFunction),
-is technically not a global object as that name is not defined
-in the global scope. Not blocking this constructor would allow
-circumventing all the protections, so proxy-script marks it
-specifically as a global object and places it on the blacklist.
-
-No other such object is known to be reachable with the
-default whitelist and blacklist settings but it is important
-to be aware of this possibility, especially if the settings
-are changed or if arguments are passed to transpiled code.
-For example, the browser `document` object is blacklisted
-by default because access to any DOM object opens another
-universe of objects and functions, some of which might not
-have been reached via the global object traversal.
+Only global objects that are explicitly specified can be accessed by
+name in transpiled code. By default, only objects in the Javascript
+language definition are provided.
 
 ### Attacker suggestions
-* Look for a way to invoke the Function or AsyncFunction
+* Look for an indirect way to invoke the Function or AsyncFunction
 constructor. This is the most direct way to escape the sandbox.
-* Look for a way to access a platform object that isn't
-marked as a global object. Use of this object will bypass the
-whitelist, and data can be stored in it that could persist
-across Runtime invocations. Methods can be made inoperable,
-though useful hijacking is probably not possible because
-few transpiled functions will work outside the runtime.
+
 * Look for a bug in the Transpiler plugin (or Babel itself)
 that causes some expression that should be wrapped not to
 be wrapped.
@@ -153,10 +135,12 @@ and with a separate origin)
 or a
 [Worker](https://developer.mozilla.org/en-US/docs/Web/API/Worker)
 (or both!).
+
 * Use a [Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)
 or a [Service Worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API)
 (or both!) to prevent untrusted code from arbitrary network access.
 If using a CSP, Runtime needs `script-src 'unsafe-eval'`.
+
 * Use [`Object.freeze()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze)
 to protect objects, including those in the global scope and those
 passed as arguments.

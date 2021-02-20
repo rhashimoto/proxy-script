@@ -18,17 +18,17 @@ describe('proxy-test', () => {
       bindings: {
         wrap: 'myWrap',
         call: 'myCall',
-        assign: 'myAssign',
-        blockBegin: 'myBlockBegin',
-        blockEnd: 'myBlockEnd'
+        func: 'myFunc',
+        klass: 'myKlass',
+        external: 'myExternal'
       }
     });
     const transpiled = transpiler.transpile('({}).foo');
     expect(transpiled.code).toMatch(/myWrap/);
     expect(transpiled.code).toMatch(/myCall/);
-    expect(transpiled.code).toMatch(/myAssign/);
-    expect(transpiled.code).toMatch(/myBlockBegin/);
-    expect(transpiled.code).toMatch(/myBlockEnd/);
+    expect(transpiled.code).toMatch(/myFunc/);
+    expect(transpiled.code).toMatch(/myKlass/);
+    expect(transpiled.code).toMatch(/myExternal/);
     expect(transpiled.code).toMatchSnapshot();
   });
 
@@ -197,7 +197,6 @@ describe('proxy-test', () => {
       eval('globalThis');
     `);
     const runtime = new Runtime();
-    runtime.whitelist.add(eval);
     const result = runtime.run(transpiled);
     await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
@@ -208,7 +207,6 @@ describe('proxy-test', () => {
       new Function('globalThis');
     `);
     const runtime = new Runtime();
-    runtime.whitelist.add(Function);
     const result = runtime.run(transpiled);
     await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
@@ -219,7 +217,6 @@ describe('proxy-test', () => {
       new (() => {}).constructor('globalThis')
     `);
     const runtime = new Runtime();
-    runtime.whitelist.add((() => {}).constructor);
     const result = runtime.run(transpiled);
     await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
@@ -395,7 +392,7 @@ describe('proxy-test', () => {
     //
     // This fails for several reasons. Both the transpiler and runtime
     // use strict mode, so `arguments.callee` and `with` are not allowed.
-    // Also, the default whitelist and blacklist settings don't include
+    // Also, the default whitelist and settings don't include
     // `Function.prototype.toString`.
     const transpiler = new Transpiler({ bindings: { wrap: '$$' } });
     transpiler.babelOptions.parserOpts.strictMode = false;
@@ -408,9 +405,6 @@ describe('proxy-test', () => {
       }
     `);
     const runtime = new Runtime();
-    runtime.whitelist.add(Function.prototype.toString);
-    runtime.blacklist.delete(Function);
-    runtime.blacklist.delete(Function.prototype);
     const result = runtime.run(transpiled);
     await expect(result).rejects.toThrowErrorMatchingSnapshot();
   });
@@ -421,9 +415,6 @@ describe('proxy-test', () => {
       return 'abc'.repeat(3);
     `);
     const runtime = new Runtime();
-    runtime.whitelist.add(Function.prototype.toString);
-    runtime.blacklist.delete(Function);
-    runtime.blacklist.delete(Function.prototype);
     const result = runtime.run(transpiled);
     await expect(result).resolves.toBe('abcabcabc');
   });
@@ -535,20 +526,6 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     runtime.whitelist.delete(Array.prototype.reverse);
     const result = runtime.run(transpiled);
-    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
-  });
-
-  test('calling blacklisted non-global function rejects', async () => {
-    const transpiler = new Transpiler();
-    const transpiled = transpiler.transpile(`
-      blacklisted();
-    `);
-
-    function blacklisted() {
-    }
-    const runtime = new Runtime();
-    runtime.blacklist.add(blacklisted);
-    const result = runtime.run(transpiled, null, { blacklisted });
     await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 
