@@ -7,7 +7,8 @@ getGlobals(globalThis);
 
 // The AsyncFunction constructor is *not* a global object but
 // it needs to be marked as global to prevent mutation.
-getGlobals((async () => {}).constructor);
+const AsyncFunction = (async () => {}).constructor;
+getGlobals(AsyncFunction);
 
 function getGlobals(obj) {
   if (obj === Object(obj) && !IMMUTABLE.has(obj)) {
@@ -33,7 +34,7 @@ function getGlobals(obj) {
 const BLACKLIST = new Set([
   eval,
   Function, Function.prototype.toString,
-  (async () => {}).constructor
+  AsyncFunction
 ]);
 
 const DEFAULT_GLOBAL_CLASSES = [
@@ -173,21 +174,6 @@ class Execution {
         return target;
       }
 
-      // TODO: Consider checking getter access.
-      // let obj = target;
-      // while (obj) {
-      //   const descriptor = Object.getOwnPropertyDescriptor(obj, property);
-      //   if (descriptor) {
-      //     if (descriptor.get &&
-      //         !this._functions.has(descriptor.get) &&
-      //         !this._runtime.whitelist.has(descriptor.get)) {
-      //       throw new Runtime.Error('get violation');
-      //     }
-      //     break;
-      //   }
-      //   obj = Object.getPrototypeOf(obj);
-      // }
-
       // Members of a proxied object are also proxied to protect
       // them against mutation.
       const member = Reflect.get(target, property);
@@ -205,6 +191,7 @@ class Execution {
   /**
    * Runtime Proxy wrapper.
    * @param {object} obj 
+   * @param {boolean} [skipGlobalCheck]
    * @returns {any} Proxy for a global, otherwise the argument itself.
    */
   _maybeWrap(obj, skipGlobalCheck) {
@@ -252,11 +239,11 @@ class Execution {
   /**
    * Enable a function to be called.
    * 
-   * This is primarily used internally. It can also be used to register
+   * This is primarily used internally, but it can also be used to register
    * dynamically created functions passed to transpiled code. For example,
    * The constructor uses this to allow the Promise constructor callbacks.
    * For most functions, i.e. those that aren't generated dynamically,
-   * using the Runtime whitelist instead is appropriate.
+   * using the Runtime whitelist instead is more appropriate.
    * @param {function} f 
    */
   registerFunction(f) {
@@ -270,7 +257,7 @@ class Execution {
    * Register user-defined class and methods.
    * 
    * This is primarily used internally. In most cases, class prototype
-   * methds should be enabled using the Runtime whitelist.
+   * methods should be enabled using the Runtime whitelist.
    * @param {function} cls 
    */
   registerClass(cls) {
@@ -291,6 +278,10 @@ class Execution {
     return this.registerFunction(cls);
   }
 
+  /**
+   * Look up external references.
+   * @param {string} name 
+   */
   _getExternal(name) {
     if (this.externals.has(name)) {
       return this.externals.get(name);

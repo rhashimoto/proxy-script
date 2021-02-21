@@ -29,6 +29,7 @@ const NO_WRAP_NEEDED = new Set([
 let Babel;
 
 function plugin({ types, template }, options) {
+  // Support functions are given a random alias to prevent shadowing.
   const bindings = Object.assign({
     wrap: '_w' + createRandomString(),
     call: '_c' + createRandomString(),
@@ -37,21 +38,18 @@ function plugin({ types, template }, options) {
     external: '_e' + createRandomString()
   }, options.bindings);
  
-  // All object expressions are wrapped by a Proxy to prevent them from
-  // changing global state. Give the wrapping function a random alias so
-  // it can't be shadowed.
+  // All global objects are wrapped by a Proxy to prevent mutation.
   const wrap = template.expression(`${bindings.wrap}(NODE)`, {
     placeholderPattern: /^NODE$/
   });
 
-  // Use a helper function for method calls, both for proper binding and
-  // to handle Function.prototype.{call, apply}.
+  // Use a helper function for method calls for proper binding.
   const call = template.expression(`${bindings.call}(OBJECT, PROPERTY, ARGS)`, {
     placeholderPattern: /^(OBJECT|PROPERTY|ARGS)$/
   });
 
-  // All function definitions are converted to lambdas (if not already a
-  // lambda) and registered using a wrapper.
+  // All transiled function definitions are converted to lambdas (if not
+  // already a lambda) and registered using a wrapper.
   const lambda = template.expression(`${bindings.func}(LAMBDA)`, {
     placeholderPattern: /^(LAMBDA)$/
   });
@@ -69,10 +67,12 @@ function plugin({ types, template }, options) {
     placeholderPattern: /^(ID|LAMBDA)$/
   });
 
+  // Register class methods.
   const klass = template.statement(`${bindings.klass}(CLASS)`, {
     placeholderPattern: /^(CLASS)$/
   });
 
+  // Lookup external references.
   const external = template.expression(`${bindings.external}('NAME')`, {
     placeholderPattern: /^(NAME)$/
   });
@@ -98,7 +98,7 @@ function plugin({ types, template }, options) {
         path.node.body = iife({ BODY: path.node.body });
       },
 
-      // Wrap all Objects with a Proxy at runtime.
+      // Check anything that could evaluate to an object or function.
       Expression(path) {
         if (!path.node.loc) return;
         if (path.node[checkedForWrap]) return;
@@ -115,7 +115,7 @@ function plugin({ types, template }, options) {
           return;
         }
 
-        // Use helper function for calls.
+        // Use helper function for method calls.
         if (path.isCallExpression()) {
           const callee = path.get('callee');
           if (callee.isMemberExpression()) {
@@ -128,20 +128,14 @@ function plugin({ types, template }, options) {
                 ARGS: path.node.arguments
               }));
             }
-          // } else if (!callee.isSuper()) {
-          //   // Not a method call, i.e. not bound to an object.
-          //   path.replaceWith(call({
-          //     OBJECT: callee.node,
-          //     PROPERTY: types.NullLiteral(),
-          //     ARGS: path.node.arguments
-          //   }));
           }
         }
 
         // Don't bother wrapping an expression whose value is discarded.
         if (path.parentPath.isExpressionStatement({ expression: path.node })) return;
 
-        // Use a different wrapper for lambdas.
+        // Register lambdas. They don't need to be wrapped further because
+        // they can't be an external object.
         if (path.isFunctionExpression() || path.isArrowFunctionExpression()) {
           path.replaceWith(lambda({ LAMBDA: path.node }));
           return;
