@@ -130,7 +130,7 @@ Runtime.prepare = function(transpiled) {
 
 const UNWRAP = Symbol('unwrap');
 
-class Execution {
+export class Execution {
   _runtime;
   _functions = new WeakSet();
   externals = new Map();
@@ -164,7 +164,7 @@ class Execution {
         })
       }
     };
-    this.externals.set('Promise', this.registerClass(MyPromise));
+    this.externals.set('Promise', this.registerClass(Object.freeze(MyPromise)));
   }
 
   /** @type {ProxyHandler} */

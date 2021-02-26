@@ -1,6 +1,6 @@
 {
   "name": "proxy-script",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "main": "docs/dist/proxy-script.js",
   "scripts": {

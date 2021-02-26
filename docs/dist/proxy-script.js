@@ -29,6 +29,7 @@ const NO_WRAP_NEEDED = new Set([
 let Babel;
 
 function plugin({ types, template }, options) {
+  // Support functions are given a random alias to prevent shadowing.
   const bindings = Object.assign({
     wrap: '_w' + createRandomString(),
     call: '_c' + createRandomString(),
@@ -37,21 +38,18 @@ function plugin({ types, template }, options) {
     external: '_e' + createRandomString()
   }, options.bindings);
  
-  // All object expressions are wrapped by a Proxy to prevent them from
-  // changing global state. Give the wrapping function a random alias so
-  // it can't be shadowed.
+  // All global objects are wrapped by a Proxy to prevent mutation.
   const wrap = template.expression(`${bindings.wrap}(NODE)`, {
     placeholderPattern: /^NODE$/
   });
 
-  // Use a helper function for method calls, both for proper binding and
-  // to handle Function.prototype.{call, apply}.
+  // Use a helper function for method calls for proper binding.
   const call = template.expression(`${bindings.call}(OBJECT, PROPERTY, ARGS)`, {
     placeholderPattern: /^(OBJECT|PROPERTY|ARGS)$/
   });
 
-  // All function definitions are converted to lambdas (if not already a
-  // lambda) and registered using a wrapper.
+  // All transiled function definitions are converted to lambdas (if not
+  // already a lambda) and registered using a wrapper.
   const lambda = template.expression(`${bindings.func}(LAMBDA)`, {
     placeholderPattern: /^(LAMBDA)$/
   });
@@ -69,10 +67,12 @@ function plugin({ types, template }, options) {
     placeholderPattern: /^(ID|LAMBDA)$/
   });
 
+  // Register class methods.
   const klass = template.statement(`${bindings.klass}(CLASS)`, {
     placeholderPattern: /^(CLASS)$/
   });
 
+  // Lookup external references.
   const external = template.expression(`${bindings.external}('NAME')`, {
     placeholderPattern: /^(NAME)$/
   });
@@ -98,7 +98,7 @@ function plugin({ types, template }, options) {
         path.node.body = iife({ BODY: path.node.body });
       },
 
-      // Wrap all Objects with a Proxy at runtime.
+      // Check anything that could evaluate to an object or function.
       Expression(path) {
         if (!path.node.loc) return;
         if (path.node[checkedForWrap]) return;
@@ -115,7 +115,7 @@ function plugin({ types, template }, options) {
           return;
         }
 
-        // Use helper function for calls.
+        // Use helper function for method calls.
         if (path.isCallExpression()) {
           const callee = path.get('callee');
           if (callee.isMemberExpression()) {
@@ -128,20 +128,14 @@ function plugin({ types, template }, options) {
                 ARGS: path.node.arguments
               }));
             }
-          // } else if (!callee.isSuper()) {
-          //   // Not a method call, i.e. not bound to an object.
-          //   path.replaceWith(call({
-          //     OBJECT: callee.node,
-          //     PROPERTY: types.NullLiteral(),
-          //     ARGS: path.node.arguments
-          //   }));
           }
         }
 
         // Don't bother wrapping an expression whose value is discarded.
         if (path.parentPath.isExpressionStatement({ expression: path.node })) return;
 
-        // Use a different wrapper for lambdas.
+        // Register lambdas. They don't need to be wrapped further because
+        // they can't be an external object.
         if (path.isFunctionExpression() || path.isArrowFunctionExpression()) {
           path.replaceWith(lambda({ LAMBDA: path.node }));
           return;
@@ -397,7 +391,8 @@ getGlobals(globalThis);
 
 // The AsyncFunction constructor is *not* a global object but
 // it needs to be marked as global to prevent mutation.
-getGlobals((async () => {}).constructor);
+const AsyncFunction = (async () => {}).constructor;
+getGlobals(AsyncFunction);
 
 function getGlobals(obj) {
   if (obj === Object(obj) && !IMMUTABLE.has(obj)) {
@@ -423,7 +418,7 @@ function getGlobals(obj) {
 const BLACKLIST = new Set([
   eval,
   Function, Function.prototype.toString,
-  (async () => {}).constructor
+  AsyncFunction
 ]);
 
 const DEFAULT_GLOBAL_CLASSES = [
@@ -551,7 +546,7 @@ class Execution {
           f(resolve, reject);
         });
       }
-    }    this.externals.set('Promise', this.registerClass(MyPromise));
+    }    this.externals.set('Promise', this.registerClass(Object.freeze(MyPromise)));
   }
 
   /** @type {ProxyHandler} */
@@ -560,21 +555,6 @@ class Execution {
       if (property === UNWRAP && this._mapObjectToProxy.has(receiver)) {
         return target;
       }
-
-      // TODO: Consider checking getter access.
-      // let obj = target;
-      // while (obj) {
-      //   const descriptor = Object.getOwnPropertyDescriptor(obj, property);
-      //   if (descriptor) {
-      //     if (descriptor.get &&
-      //         !this._functions.has(descriptor.get) &&
-      //         !this._runtime.whitelist.has(descriptor.get)) {
-      //       throw new Runtime.Error('get violation');
-      //     }
-      //     break;
-      //   }
-      //   obj = Object.getPrototypeOf(obj);
-      // }
 
       // Members of a proxied object are also proxied to protect
       // them against mutation.
@@ -593,6 +573,7 @@ class Execution {
   /**
    * Runtime Proxy wrapper.
    * @param {object} obj 
+   * @param {boolean} [skipGlobalCheck]
    * @returns {any} Proxy for a global, otherwise the argument itself.
    */
   _maybeWrap(obj, skipGlobalCheck) {
@@ -640,11 +621,11 @@ class Execution {
   /**
    * Enable a function to be called.
    * 
-   * This is primarily used internally. It can also be used to register
+   * This is primarily used internally, but it can also be used to register
    * dynamically created functions passed to transpiled code. For example,
    * The constructor uses this to allow the Promise constructor callbacks.
    * For most functions, i.e. those that aren't generated dynamically,
-   * using the Runtime whitelist instead is appropriate.
+   * using the Runtime whitelist instead is more appropriate.
    * @param {function} f 
    */
   registerFunction(f) {
@@ -658,7 +639,7 @@ class Execution {
    * Register user-defined class and methods.
    * 
    * This is primarily used internally. In most cases, class prototype
-   * methds should be enabled using the Runtime whitelist.
+   * methods should be enabled using the Runtime whitelist.
    * @param {function} cls 
    */
   registerClass(cls) {
@@ -679,6 +660,10 @@ class Execution {
     return this.registerFunction(cls);
   }
 
+  /**
+   * Look up external references.
+   * @param {string} name 
+   */
   _getExternal(name) {
     if (this.externals.has(name)) {
       return this.externals.get(name);
@@ -745,5 +730,5 @@ function getOwnProperties(obj) {
     .flat();
 }
 
-export { Runtime, Transpiler };
+export { Execution, Runtime, Transpiler };
 //# sourceMappingURL=proxy-script.js.map
