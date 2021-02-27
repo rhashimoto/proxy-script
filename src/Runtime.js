@@ -161,7 +161,7 @@ export class Execution {
           func(resolve);
           func(reject);
           f(resolve, reject);
-        })
+        });
       }
     };
     this.externals.set('Promise', this.registerClass(Object.freeze(MyPromise)));
@@ -284,11 +284,11 @@ export class Execution {
    */
   _getExternal(name) {
     if (this.externals.has(name)) {
-      return this.externals.get(name);
+      return this._maybeWrap(this.externals.get(name), true);
     }
 
     if (this._runtime.globals.has(name)) {
-      return this._runtime.globals.get(name);
+      return this._maybeWrap(this._runtime.globals.get(name), true);
     }
     throw new Runtime.Error(`undefined '${name}'`);
   }

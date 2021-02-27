@@ -1,7 +1,7 @@
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
 
 import * as Babel from '@babel/standalone';
-import { Transpiler, Runtime } from '../src/index';
+import { Transpiler, Runtime, Execution } from '../src/index';
 
 globalThis.Babel = Babel;
 Transpiler.register(Babel);
@@ -539,5 +539,67 @@ describe('proxy-test', () => {
     const runtime = new Runtime();
     const result = await runtime.run(transpiled).catch(e => e);
     expect(result.stack).toMatch(/<proxy-script>:3/);
+  });
+
+  test('new whitelisted globals can be configured', async () => {
+    function multiply(x, y) { return x * y; }
+
+    const transpiler = new Transpiler();
+    const transpiled = transpiler.transpile(`
+      return myGlobal(6, 7);
+    `);
+
+    const runtime = new Runtime();
+    runtime.globals.set('myGlobal', multiply);
+    runtime.whitelist.add(multiply);
+    const result = runtime.run(transpiled);
+    expect(result).resolves.toBe(42);
+  });
+
+  test('new whitelisted globals are immutable', async () => {
+    function multiply(x, y) { return x * y; }
+
+    const transpiler = new Transpiler();
+    const transpiled = transpiler.transpile(`
+      myGlobal.foo = 'bar';
+    `);
+
+    const runtime = new Runtime();
+    runtime.globals.set('myGlobal', multiply);
+    runtime.whitelist.add(multiply);
+    const result = runtime.run(transpiled);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
+  });
+
+  test('new externals can be configured', async () => {
+    function multiply(x, y) { return x * y; }
+
+    const transpiler = new Transpiler();
+    const transpiled = transpiler.transpile(`
+      return myExternal(6, 7);
+    `);
+
+    const runtime = new Runtime();
+    const execution = new Execution(runtime);
+    execution.externals.set('myExternal', multiply);
+    execution.registerFunction(multiply);
+    const result = execution.run(Runtime.prepare(transpiled));
+    expect(result).resolves.toBe(42);
+  });
+
+  test('new externals are immutable', async () => {
+    function multiply(x, y) { return x * y; }
+
+    const transpiler = new Transpiler();
+    const transpiled = transpiler.transpile(`
+      myExternal.foo = 'bar';
+    `);
+
+    const runtime = new Runtime();
+    const execution = new Execution(runtime);
+    execution.externals.set('myExternal', multiply);
+    execution.registerFunction(multiply);
+    const result = execution.run(Runtime.prepare(transpiled));
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
   });
 });
