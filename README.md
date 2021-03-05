@@ -37,15 +37,17 @@ const result = await runtime.run(transpiled); // 5
 1. `Transpiler.register()` must be called with the Babel instance
 before using the transpiler.
 2. The constructor takes an optional options argument, which is
-mainly useful for adding custom plugin features (and testing).
+mainly useful for adding custom plugin features (and testing). The
+`globals` property (of type `Set`) can be used configuring access
+to names in the global scope.
 3. `transpile()` returns the result of
 [`Babel.transform()`](https://babeljs.io/docs/en/babel-core#transform).
-4. The constructor takes no arguments. The `whitelist` and
-`blacklist` members (of type `Set`) are used for configuration.
+4. The constructor takes no arguments. The `whitelist` property
+(of type `Set`) can be used for configuring permitted functions.
 Note that the runtime can be used in a separate JavaScript context
 from the transpiler.
-5. `run()` takes optional arguments for `this` and an object with
-argument bindings. Exceptions are thrown for any access violation.
+5. `run()` takes an optional argument for binding external references
+that are not in the global scope.
 
 See the
 [examples](https://github.com/rhashimoto/proxy-script/tree/master/docs)
@@ -66,7 +68,7 @@ and wraps any expression that *might* be a global object in a
 function call. The wrapper functions are called via random aliases
 so the untrusted code can't shadow them.
 
-For example, the transpiler converts this:
+For example, the transpiler converts this...
 
 ```javascript
 console.log('Hello, world!');
@@ -77,15 +79,13 @@ console.log('Hello, world!');
 ```javascript
 "use strict";
 
-const _w1vew3xapmlv = _wrap;
-const _crrz2kba773 = _call;
-const _f1drq3uzuusz = _func;
-const _kvu15058mep = _klass;
-const _eox4c74zksn = _external;
+const _w2b13ks5rnph = _wrap;
+const _c185u9d2xcwf = _call;
+const _f1pxgpwqrlyd = _func;
+const _k2981j4akxuf = _klass;
 return (async () => {
-  _crrz2kba773(_w1vew3xapmlv(_eox4c74zksn("console")), 'log', 'Hello, world!');
+  _c185u9d2xcwf(_w2b13ks5rnph(console), 'log', 'Hello, world!');
 })();
-//# sourceMappingURL=data:application/json;charset=utf-8;base64,...
 ```
 
 ### Runtime
@@ -99,14 +99,13 @@ it is wrapped in a
 * If a proxied object is mutated (e.g. setting properties),
 an exception is thrown.
 
-* If a proxied object is not found on the whitelist and is
-called as a constructor or function, an exception is thrown.
+* If an object used as a constructor or function is not found on
+the whitelist, an exception is thrown.
 
-In the above example, `console` is checked whether it is on the
-whether it is a global object (yes) and wrapped in a Proxy. The method
-call is implemented by a support function that checks whether the
-member `log` is in the whitelist (yes by default) and makes
-the call.
+In the above example, `console` is checked whether it is a global
+object (yes) and wrapped in a Proxy. The method call is implemented
+by a support function that checks whether the member `log` is in
+the whitelist (yes by default) and makes the call.
 
 ### What is a "global object"?
 When the Runtime class is loaded it recursively traverses the
