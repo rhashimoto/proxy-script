@@ -1,4 +1,15 @@
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
+import {
+  DEFAULT_GLOBAL_CLASSES,
+  DEFAULT_GLOBAL_FUNCTIONS,
+  DEFAULT_GLOBAL_OBJECTS
+} from './constants.js';
+
+const DEFAULT_GLOBALS = [
+  DEFAULT_GLOBAL_CLASSES,
+  DEFAULT_GLOBAL_FUNCTIONS,
+  DEFAULT_GLOBAL_OBJECTS
+].flat();
 
 const NO_WRAP_NEEDED = new Set([
   // These types cannot be wrapped with a Proxy. This is only an
@@ -34,8 +45,7 @@ function plugin({ types, template }, options) {
     wrap: '_w' + createRandomString(),
     call: '_c' + createRandomString(),
     func: '_f' + createRandomString(),
-    klass: '_k' + createRandomString(),
-    external: '_e' + createRandomString()
+    klass: '_k' + createRandomString()
   }, options.bindings);
  
   // All global objects are wrapped by a Proxy to prevent mutation.
@@ -68,13 +78,11 @@ function plugin({ types, template }, options) {
   });
 
   // Register class methods.
-  const klass = template.statement(`${bindings.klass}(CLASS)`, {
-    placeholderPattern: /^(CLASS)$/
+  const classDecl = template.statement(`let NAME = ${bindings.klass}(CLASS)`, {
+    placeholderPattern: /^(NAME|CLASS)$/
   });
-
-  // Lookup external references.
-  const external = template.expression(`${bindings.external}('NAME')`, {
-    placeholderPattern: /^(NAME)$/
+  const classExpr = template.expression(`${bindings.klass}(CLASS)`, {
+    placeholderPattern: /^(CLASS)$/
   });
 
   // Wrap the entire script in an Immediately Invoked Function Expression
@@ -88,14 +96,16 @@ function plugin({ types, template }, options) {
       BODY
     })();
   `, {
-    placeholderPattern: /^BODY$/
+    placeholderPattern: /^(BODY)$/
   });
 
   const checkedForWrap = Symbol('checkedForWrap');
   return {
     visitor: {
       Program(path) {
-        path.node.body = iife({ BODY: path.node.body });
+        path.node.body = iife({
+          BODY: path.node.body
+        });
       },
 
       // Check anything that could evaluate to an object or function.
@@ -141,9 +151,12 @@ function plugin({ types, template }, options) {
           return;
         }
         
-        // Fetch external references.
-        if (path.isIdentifier() && !path.scope.hasBinding(path.node.name, true)) {
-          path.replaceWith(external({ NAME: path.node.name }))
+        // Handle external references. Any externals that are not whitelisted
+        // globals must be supplied at runtime.
+        if (path.isIdentifier() &&
+            !path.scope.hasBinding(path.node.name, true) &&
+            !options.globals.has(path.node.name)) {
+          options.externals.add(path.node.name);
         }
 
         path.replaceWith(wrap({ NODE: path.node }));
@@ -176,7 +189,25 @@ function plugin({ types, template }, options) {
       ClassDeclaration(path) {
         if (!path.node.loc) return;
 
-        path.insertAfter(klass({ CLASS: types.Identifier(path.node.id.name) }));
+        path.replaceWith(classDecl({
+          NAME: types.Identifier(path.node.id.name),
+          CLASS: types.classExpression(
+            path.node.id,
+            path.node.superClass,
+            path.node.body)
+        }));
+      },
+
+      ClassExpression(path) {
+        if (!path.node.loc) return;
+
+        path.replaceWith(classExpr({
+          CLASS: types.classExpression(
+            path.node.id,
+            path.node.superClass,
+            path.node.body)
+        }));
+
       }
     }
   }
@@ -193,10 +224,17 @@ export class Transpiler {
     sourceMaps: true
   };
 
+  globals = new Set(DEFAULT_GLOBALS);
+  externals = new Set();
+
   /**
    * @param {{ bindings?: object }} [options] 
    */
   constructor(options = {}) {
+    options = Object.assign({
+      globals: this.globals,
+      externals: this.externals
+    }, options)
     // @ts-ignore
     this.babelOptions.plugins.push(['proxy-script', options]);
   }
@@ -206,7 +244,9 @@ export class Transpiler {
    * @returns {object}
    */
   transpile(source) {
-    return this.babel.transform(source, this.babelOptions);
+    const result = this.babel.transform(source, this.babelOptions);
+    result.externals = new Set(this.externals.keys());
+    return result;
   }
 };
 

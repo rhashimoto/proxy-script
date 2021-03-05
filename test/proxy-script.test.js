@@ -1,7 +1,7 @@
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
 
 import * as Babel from '@babel/standalone';
-import { Transpiler, Runtime, Execution } from '../src/index';
+import { Transpiler, Runtime } from '../src/index';
 
 globalThis.Babel = Babel;
 Transpiler.register(Babel);
@@ -38,24 +38,6 @@ describe('proxy-test', () => {
 
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result).resolves.toBe(42);
-  });
-
-  test('runtime passes arguments', async () => {
-    const transpiler = new Transpiler();
-    const transpiled = transpiler.transpile('return a + b;');
-
-    const runtime = new Runtime();
-    const result = runtime.run(transpiled, undefined, { a: 1, b: 2 });
-    await expect(result).resolves.toBe(3);
-  });
-
-  test('runtime passes target (thisArg)', async () => {
-    const transpiler = new Transpiler();
-    const transpiled = transpiler.transpile('return this.foo;');
-
-    const runtime = new Runtime();
-    const result = runtime.run(transpiled, { foo: 42 });
     await expect(result).resolves.toBe(42);
   });
 
@@ -406,7 +388,7 @@ describe('proxy-test', () => {
     `);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
-    await expect(result).rejects.toThrowErrorMatchingSnapshot();
+    await expect(result).rejects.toThrowError();
   });
 
   test('literal member expression', async () => {
@@ -541,34 +523,19 @@ describe('proxy-test', () => {
     expect(result.stack).toMatch(/<proxy-script>:3/);
   });
 
-  test('new whitelisted globals can be configured', async () => {
-    function multiply(x, y) { return x * y; }
+  test('new globals can be configured', async () => {
+    globalThis.myGlobal = function(x, y) { return x * y; };
 
     const transpiler = new Transpiler();
+    transpiler.globals.add('myGlobal');
     const transpiled = transpiler.transpile(`
       return myGlobal(6, 7);
     `);
 
     const runtime = new Runtime();
-    runtime.globals.set('myGlobal', multiply);
-    runtime.whitelist.add(multiply);
+    runtime.whitelist.add(globalThis.myGlobal);
     const result = runtime.run(transpiled);
-    expect(result).resolves.toBe(42);
-  });
-
-  test('new whitelisted globals are immutable', async () => {
-    function multiply(x, y) { return x * y; }
-
-    const transpiler = new Transpiler();
-    const transpiled = transpiler.transpile(`
-      myGlobal.foo = 'bar';
-    `);
-
-    const runtime = new Runtime();
-    runtime.globals.set('myGlobal', multiply);
-    runtime.whitelist.add(multiply);
-    const result = runtime.run(transpiled);
-    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
+    await expect(result).resolves.toBe(42);
   });
 
   test('new externals can be configured', async () => {
@@ -580,26 +547,7 @@ describe('proxy-test', () => {
     `);
 
     const runtime = new Runtime();
-    const execution = new Execution(runtime);
-    execution.externals.set('myExternal', multiply);
-    execution.registerFunction(multiply);
-    const result = execution.run(Runtime.prepare(transpiled));
-    expect(result).resolves.toBe(42);
-  });
-
-  test('new externals are immutable', async () => {
-    function multiply(x, y) { return x * y; }
-
-    const transpiler = new Transpiler();
-    const transpiled = transpiler.transpile(`
-      myExternal.foo = 'bar';
-    `);
-
-    const runtime = new Runtime();
-    const execution = new Execution(runtime);
-    execution.externals.set('myExternal', multiply);
-    execution.registerFunction(multiply);
-    const result = execution.run(Runtime.prepare(transpiled));
-    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
+    const result = runtime.run(transpiled, { myExternal: Runtime.fn(multiply) });
+    await expect(result).resolves.toBe(42);
   });
 });

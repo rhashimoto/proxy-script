@@ -1,4 +1,33 @@
+const DEFAULT_GLOBAL_CLASSES = [
+  'Array', 'Object', 'Boolean', 'Error',
+  'Number', 'BigInt', 'Date',
+  'String', 'RegExp',
+  'Map', 'Set', 'WeakMap', 'WeakSet',
+  'Symbol',
+  'Promise',
+
+  'ArrayBuffer',
+  'Int8Array', 'Int16Array', 'Int32Array',
+  'Uint8Array', 'Uint16Array', 'Uint32Array',
+  'Float32Array', 'Float64Array',
+  'DataView'
+];
+
+const DEFAULT_GLOBAL_OBJECTS = [
+  'console', 'Math', 'JSON'
+];
+
+const DEFAULT_GLOBAL_FUNCTIONS = [
+  'atob', 'btoa', 'isFinite', 'isNaN', 'parseFloat', 'parseInt'
+].filter(name => globalThis.hasOwnProperty(name));
+
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
+
+const DEFAULT_GLOBALS = [
+  DEFAULT_GLOBAL_CLASSES,
+  DEFAULT_GLOBAL_FUNCTIONS,
+  DEFAULT_GLOBAL_OBJECTS
+].flat();
 
 const NO_WRAP_NEEDED = new Set([
   // These types cannot be wrapped with a Proxy. This is only an
@@ -34,8 +63,7 @@ function plugin({ types, template }, options) {
     wrap: '_w' + createRandomString(),
     call: '_c' + createRandomString(),
     func: '_f' + createRandomString(),
-    klass: '_k' + createRandomString(),
-    external: '_e' + createRandomString()
+    klass: '_k' + createRandomString()
   }, options.bindings);
  
   // All global objects are wrapped by a Proxy to prevent mutation.
@@ -68,13 +96,11 @@ function plugin({ types, template }, options) {
   });
 
   // Register class methods.
-  const klass = template.statement(`${bindings.klass}(CLASS)`, {
-    placeholderPattern: /^(CLASS)$/
+  const classDecl = template.statement(`let NAME = ${bindings.klass}(CLASS)`, {
+    placeholderPattern: /^(NAME|CLASS)$/
   });
-
-  // Lookup external references.
-  const external = template.expression(`${bindings.external}('NAME')`, {
-    placeholderPattern: /^(NAME)$/
+  const classExpr = template.expression(`${bindings.klass}(CLASS)`, {
+    placeholderPattern: /^(CLASS)$/
   });
 
   // Wrap the entire script in an Immediately Invoked Function Expression
@@ -88,14 +114,16 @@ function plugin({ types, template }, options) {
       BODY
     })();
   `, {
-    placeholderPattern: /^BODY$/
+    placeholderPattern: /^(BODY)$/
   });
 
   const checkedForWrap = Symbol('checkedForWrap');
   return {
     visitor: {
       Program(path) {
-        path.node.body = iife({ BODY: path.node.body });
+        path.node.body = iife({
+          BODY: path.node.body
+        });
       },
 
       // Check anything that could evaluate to an object or function.
@@ -141,9 +169,12 @@ function plugin({ types, template }, options) {
           return;
         }
         
-        // Fetch external references.
-        if (path.isIdentifier() && !path.scope.hasBinding(path.node.name, true)) {
-          path.replaceWith(external({ NAME: path.node.name }));
+        // Handle external references. Any externals that are not whitelisted
+        // globals must be supplied at runtime.
+        if (path.isIdentifier() &&
+            !path.scope.hasBinding(path.node.name, true) &&
+            !options.globals.has(path.node.name)) {
+          options.externals.add(path.node.name);
         }
 
         path.replaceWith(wrap({ NODE: path.node }));
@@ -176,7 +207,25 @@ function plugin({ types, template }, options) {
       ClassDeclaration(path) {
         if (!path.node.loc) return;
 
-        path.insertAfter(klass({ CLASS: types.Identifier(path.node.id.name) }));
+        path.replaceWith(classDecl({
+          NAME: types.Identifier(path.node.id.name),
+          CLASS: types.classExpression(
+            path.node.id,
+            path.node.superClass,
+            path.node.body)
+        }));
+      },
+
+      ClassExpression(path) {
+        if (!path.node.loc) return;
+
+        path.replaceWith(classExpr({
+          CLASS: types.classExpression(
+            path.node.id,
+            path.node.superClass,
+            path.node.body)
+        }));
+
       }
     }
   }
@@ -193,10 +242,17 @@ class Transpiler {
     sourceMaps: true
   };
 
+  globals = new Set(DEFAULT_GLOBALS);
+  externals = new Set();
+
   /**
    * @param {{ bindings?: object }} [options] 
    */
   constructor(options = {}) {
+    options = Object.assign({
+      globals: this.globals,
+      externals: this.externals
+    }, options);
     // @ts-ignore
     this.babelOptions.plugins.push(['proxy-script', options]);
   }
@@ -206,7 +262,9 @@ class Transpiler {
    * @returns {object}
    */
   transpile(source) {
-    return this.babel.transform(source, this.babelOptions);
+    const result = this.babel.transform(source, this.babelOptions);
+    result.externals = new Set(this.externals.keys());
+    return result;
   }
 }
 Transpiler.register = function(babel) {
@@ -386,27 +444,27 @@ function parseSegment(segment) {
 // Copyright 2021 Roy T. Hashimoto. All rights reserved.
 
 // Enumerate global objects and their properties.
-const IMMUTABLE = new WeakSet();
-getGlobals(globalThis);
+const IMMUTABLES = new WeakSet();
+getImmutables(globalThis);
 
 // The AsyncFunction constructor is *not* a global object but
 // it needs to be marked as global to prevent mutation.
 const AsyncFunction = (async () => {}).constructor;
-getGlobals(AsyncFunction);
+getImmutables(AsyncFunction);
 
-function getGlobals(obj) {
-  if (obj === Object(obj) && !IMMUTABLE.has(obj)) {
-    IMMUTABLE.add(obj);
+function getImmutables(obj) {
+  if (obj === Object(obj) && !IMMUTABLES.has(obj)) {
+    IMMUTABLES.add(obj);
     const descriptors = Object.getOwnPropertyDescriptors(obj);
     for (const [name, descriptor] of Object.entries(descriptors)) {
       try {
         if (descriptor.get) {
-          getGlobals(descriptor.get);
+          getImmutables(descriptor.get);
           if (descriptor.set) {
-            getGlobals(descriptor.set);
+            getImmutables(descriptor.set);
           }
         } else {
-          getGlobals(obj[name]);
+          getImmutables(obj[name]);
         }
       } catch (e) {
         console.warn('global enumeration failure', name);
@@ -415,45 +473,19 @@ function getGlobals(obj) {
   }
 }
 
+const ALLOWED = Symbol('allowed');
+const PREPARED = Symbol('prepared');
+const UNWRAP = Symbol('unwrap');
+
+// For safety, forbid these objects even if the user whitelists them.
 const BLACKLIST = new Set([
-  eval,
+  AsyncFunction,
   Function, Function.prototype.toString,
-  AsyncFunction
+  eval
 ]);
 
-const DEFAULT_GLOBAL_CLASSES = [
-  'Array', 'Object', 'Boolean', 'Error',
-  'Number', 'BigInt', 'Date',
-  'String', 'RegExp',
-  'Map', 'Set', 'WeakMap', 'WeakSet',
-  'Symbol',
-  'Promise',
-
-  'ArrayBuffer',
-  'Int8Array', 'Int16Array', 'Int32Array',
-  'Uint8Array', 'Uint16Array', 'Uint32Array',
-  'Float32Array', 'Float64Array',
-  'DataView'
-];
-
-const DEFAULT_GLOBAL_OBJECTS = [
-  'console', 'Math', 'JSON'
-];
-
-const DEFAULT_GLOBAL_FUNCTIONS = [
-  'atob', 'btoa', 'isFinite', 'isNaN', 'parseFloat', 'parseInt'
-].filter(name => globalThis.hasOwnProperty(name));
-
 class Runtime {
-  /** @type {Map<string, object|function>} */
-  // @ts-ignore
-  globals = new Map([
-    [DEFAULT_GLOBAL_CLASSES, DEFAULT_GLOBAL_OBJECTS, DEFAULT_GLOBAL_FUNCTIONS]
-      .flat()
-      .map(name => [name, globalThis[name]]),
-  ].flat());
-
-  /** @type {Set<function>} */
+  /** @type {Set<function>} callable global scope functions */
   whitelist = new Set([
     DEFAULT_GLOBAL_CLASSES.map(name => getClassEntries(globalThis[name])).flat(),
     DEFAULT_GLOBAL_OBJECTS.map(name => getOwnProperties(globalThis[name])).flat(),
@@ -466,15 +498,161 @@ class Runtime {
   ].flat().filter(x => x === Object(x)));
 
   /**
-   * @param {{code: string, map?: object}} transpiled 
-   * @param {object?} thisArg
-   * @param {object} args 
+   * @param {{code: string, externals: object, map?: object}} transpiled 
+   * @param {object?} externals 
    * @returns {Promise}
    */
-  run(transpiled, thisArg, args) {
-    transpiled = Runtime.prepare(transpiled);
-    const execution = new Execution(this);
-    return execution.run(transpiled, thisArg, args);
+  async run(transpiled, externals = {}) {
+    transpiled = this._prepare(transpiled);
+
+    // Check that all external references are satisfied.
+    for (const external of transpiled.externals.keys()) {
+      if (!externals.hasOwnProperty(external)) {
+        throw new Runtime.Error(`'${external}' not provided`);
+      }
+    }
+
+    // All proxies are remembered in this map. This is not just an
+    // optimization; it is important that the same proxy is always used
+    // for the same object.
+    const mapObjectToProxy = new WeakMap();
+    const support = {
+      'Promise': RuntimePromise,
+
+      '_wrap': obj => this._maybeWrap(obj, mapObjectToProxy),
+
+      '_call': (obj, property, ...args) => {
+        const member = this._maybeWrap(obj[property], mapObjectToProxy);
+        return this._callMethod(obj, member, ...args);
+      },
+
+      '_func': Runtime.fn,
+      '_klass': Runtime.cls
+    };
+    
+    try {
+      const f = new Function(
+        ...Object.keys(support),
+        ...Object.keys(externals),
+        transpiled.code);
+      return await f(
+        ...Object.values(support),
+        ...Object.values(externals));
+    } catch (e) {
+      if (e === Object(e) && typeof e.stack === 'string') {
+        e.stack = SourceMap.patchStackTrace(e.stack, transpiled.map);
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Prepare transpiled code to be run.
+   * @param {{code: string, externals: object, map?: object}} transpiled 
+   */
+  _prepare(transpiled) {
+    if (transpiled[PREPARED]) return transpiled;
+    transpiled = Object.assign({}, transpiled, { [PREPARED]: true });
+  
+    // Add an inline sourcemap if possible.
+    if (transpiled.map?.version === 3) {
+      const map = transpiled.map = Object.assign({}, transpiled.map);
+  
+      // Patch sourcemap for insertions by Function constructor.
+      map.sources = ['proxy-script'];
+      SourceMap.patchMapForFunctionWrapper(map);
+  
+      // Add the sourcemap inline to the code.
+      const inline = SourceMap.createInline(map);
+      if (inline.length < 2 ** 23) {
+        transpiled.code += `\n${inline}`;
+      } else {
+        console.warn(`proxy-script sourcemap omitted due to size (${inline.length} bytes)`);
+      }
+    }
+    return transpiled;
+  }
+
+  /**
+   * Wrap object with immutable Proxy if needed.
+   * @param {object} obj 
+   * @param {WeakMap} mapObjectToProxy
+   * @param {boolean} [isImmutableProperty]
+   * @returns {any} Proxy for a global, otherwise the argument itself.
+   */
+  _maybeWrap(obj, mapObjectToProxy, isImmutableProperty) {
+    if (obj !== Object(obj)) return obj;
+    if (mapObjectToProxy.has(obj)) {
+      // This object already has a Proxy so use the existing one.
+      return mapObjectToProxy.get(obj);
+    }
+    obj = obj[UNWRAP] ?? obj;
+
+    if (BLACKLIST.has(obj)) {
+      throw new Runtime.Error('blacklist violation');
+    }
+
+    // A function must either be user-defined or be on the whitelist.
+    if (typeof obj === 'function' && !obj[ALLOWED] && !this.whitelist.has(obj)) {
+      throw new Runtime.Error('permission denied');
+    }
+
+    if (!isImmutableProperty && !IMMUTABLES.has(obj)) return obj;
+
+    const proxy = new Proxy(obj, {
+      get: (target, property, receiver) => {
+        // Use a special "property" to unwrap the proxied object. The
+        // second conditional checking that the receiver is really a
+        // proxy is needed to skip the case when the receiver is a subclass
+        // of a proxied class.
+        if (property === UNWRAP && mapObjectToProxy.has(receiver)) {
+          return target;
+        }
+
+        // Members of a proxied object are also proxied to protect
+        // them against mutation. The proxy is not returned here because
+        // in some cases not returning the actual value throws an error,
+        // but the creation of the proxy ensures its future use.
+        const member = Reflect.get(target, property);
+        this._maybeWrap(member, mapObjectToProxy, true);
+        return member;
+      },
+
+      set: (target, property, value, receiver) => {
+        if (!mapObjectToProxy.has(receiver)) {
+          // Suppose a script does obj.name = "jen", and obj is not a
+          // proxy, and has no own property .name, but it has a proxy on
+          // its prototype chain. That proxy's set() handler will be
+          // called, and obj will be passed as the receiver.
+          // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/Proxy/set
+          return Reflect.set(target, property, value, receiver);
+        }
+        throw new Runtime.Error('set violation');
+      },
+
+      defineProperty() { throw new Runtime.Error('defineProperty violation'); },
+      deleteProperty() { throw new Runtime.Error('deleteProperty violation'); },
+      preventExtensions() { throw new Runtime.Error('preventExtensions violation'); },
+      setPrototypeOf() { throw new Runtime.Error('setPrototypeOf violation'); },
+    });
+    
+    mapObjectToProxy.set(obj, proxy);
+    mapObjectToProxy.set(proxy, proxy);
+    return proxy;
+  }
+  
+  /**
+   * Runtime support for method invocation.
+   * @param {*} obj 
+   * @param {function} method 
+   * @param {...any} args 
+   */
+  _callMethod(obj, method, ...args) {
+    if ((method[UNWRAP] || method) === Function.prototype.bind) {
+      // Register bind() return value as a special case.
+      return Runtime.fn(method.apply(obj, args));
+    }
+    return method.apply(obj, args);
   }
 }
 Runtime.Error = class extends Error {
@@ -483,229 +661,52 @@ Runtime.Error = class extends Error {
   }
 };
 
-const PREPARED = Symbol('prepared');
 /**
- * Patch sourcemap and attach inline to code.
- * @param {{code: string, map?: object}} transpiled 
+ * Return a Proxy for the function argument that is allowed to be called.
+ * @param {function} f 
  */
-Runtime.prepare = function(transpiled) {
-  if (transpiled[PREPARED]) return transpiled;
-  transpiled = Object.assign({}, transpiled, { [PREPARED]: true });
-
-  // Add an inline sourcemap if possible.
-  if (transpiled.map?.version === 3) {
-    const map = transpiled.map = Object.assign({}, transpiled.map);
-
-    // Patch sourcemap for insertions by Function constructor.
-    map.sources = ['proxy-script'];
-    SourceMap.patchMapForFunctionWrapper(map);
-
-    // Add the sourcemap inline to the code.
-    const inline = SourceMap.createInline(map);
-    if (inline.length < 2 ** 23) {
-      transpiled.code += `\n${inline}`;
-    } else {
-      console.warn(`proxy-script sourcemap omitted due to size (${inline.length} bytes)`);
+Runtime.fn = function(f) {
+  if (f[ALLOWED]) return f;
+  return new Proxy(f, {
+    get: (target, property) => {
+      if (property === ALLOWED) return true;
+      return Reflect.get(target, property);
     }
-  }
-  return transpiled;
+  });
 };
 
-const UNWRAP = Symbol('unwrap');
-
-class Execution {
-  _runtime;
-  _functions = new WeakSet();
-  externals = new Map();
-
-  // All proxies are remembered in this map. This is not just an optimization;
-  // it is important that the same proxy is always used for the same object.
-  // Consider the case where objects are kept in a set and tested for
-  // membership - that doesn't work if there can be multiple proxies.
-  //
-  // Proxies are mapped to themselves. Hopefully that doesn't affect garbage
-  // collection.
-  _mapObjectToProxy = new WeakMap();
-
-  /**
-   * @param {Runtime} runtime 
-   */
-  constructor(runtime) {
-    this._runtime = runtime;
-
-    // Expose Promise that works. Dynamically created functions that come
-    // from external code need special handling. Here we add a subclass
-    // that registers the `resolve` and `reject` functions before passing
-    // them to the client code.
-    const func = f => this.registerFunction(f);
-    class MyPromise extends Promise {
-      constructor(f) {
-        super((resolve, reject) => {
-          func(resolve);
-          func(reject);
-          f(resolve, reject);
-        });
+Runtime.cls = function(cls) {
+  const descriptors = Object.getOwnPropertyDescriptors(cls.prototype);
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (typeof descriptor.get === 'function') {
+      // @ts-ignore
+      descriptor.get = Runtime.fn(descriptor.get);
+      if (typeof descriptor.set === 'function') {
+        // @ts-ignore
+        descriptor.set = Runtime.fn(descriptor.set);
       }
-    }    this.externals.set('Promise', this.registerClass(Object.freeze(MyPromise)));
-  }
-
-  /** @type {ProxyHandler} */
-  _handler = {
-    get: (target, property, receiver) => {
-      if (property === UNWRAP && this._mapObjectToProxy.has(receiver)) {
-        return target;
-      }
-
-      // Members of a proxied object are also proxied to protect
-      // them against mutation.
-      const member = Reflect.get(target, property);
-      this._maybeWrap(member, true);
-      return member;
-    },
-
-    defineProperty() { throw new Runtime.Error('defineProperty violation'); },
-    deleteProperty() { throw new Runtime.Error('deleteProperty violation'); },
-    preventExtensions() { throw new Runtime.Error('preventExtensions violation'); },
-    set() { throw new Runtime.Error('set violation'); },
-    setPrototypeOf() { throw new Runtime.Error('setPrototypeOf violation'); },
-  };
-  
-  /**
-   * Runtime Proxy wrapper.
-   * @param {object} obj 
-   * @param {boolean} [skipGlobalCheck]
-   * @returns {any} Proxy for a global, otherwise the argument itself.
-   */
-  _maybeWrap(obj, skipGlobalCheck) {
-    if (obj !== Object(obj)) return obj;
-    obj = obj[UNWRAP] ?? obj;
-
-    if (BLACKLIST.has(obj)) {
-      throw new Runtime.Error('blacklist violation');
-    }
-
-    // A function must either be user-defined or be on the whitelist.
-    const isWhitelisted = this._runtime.whitelist.has(obj);
-    if (typeof obj === 'function' && !this._functions.has(obj) && !isWhitelisted) {
-      throw new Runtime.Error('whitelist violation');
-    }
-
-    if (this._mapObjectToProxy.has(obj)) {
-      // This object already has a Proxy so use the existing one.
-      return this._mapObjectToProxy.get(obj);
-    }
-
-    if (!skipGlobalCheck && !IMMUTABLE.has(obj)) return obj;
-
-    const proxy = new Proxy(obj, this._handler);
-    this._mapObjectToProxy.set(obj, proxy);
-    this._mapObjectToProxy.set(proxy, proxy);
-    return proxy;
-  }
-  
-  /**
-   * Runtime support for method invocation.
-   * @param {*} object 
-   * @param {*} property 
-   * @param  {...any} args 
-   */
-  _callMethod(object, property, ...args) {
-    const member = object[property];
-    if (member === Function.prototype.bind) {
-      // Register bind() return value as a special case.
-      return this.registerFunction(member.apply(object, args));
-    }
-    return this._maybeWrap(member).apply(object, args);
-  }
-
-  /**
-   * Enable a function to be called.
-   * 
-   * This is primarily used internally, but it can also be used to register
-   * dynamically created functions passed to transpiled code. For example,
-   * The constructor uses this to allow the Promise constructor callbacks.
-   * For most functions, i.e. those that aren't generated dynamically,
-   * using the Runtime whitelist instead is more appropriate.
-   * @param {function} f 
-   */
-  registerFunction(f) {
-    if (typeof f === 'function') {
-      this._functions.add(f);
-    }
-    return f;
-  }
-
-  /**
-   * Register user-defined class and methods.
-   * 
-   * This is primarily used internally. In most cases, class prototype
-   * methods should be enabled using the Runtime whitelist.
-   * @param {function} cls 
-   */
-  registerClass(cls) {
-    const descriptors = Object.getOwnPropertyDescriptors(cls.prototype);
-    for (const [key, descriptor] of Object.entries(descriptors)) {
-      if (typeof descriptor.get === 'function') {
-        this.registerFunction(descriptor.get);
-        if (typeof descriptor.set === 'function') {
-          this.registerFunction(descriptor.set);
-        }
-      } else {
-        const member = cls.prototype[key];
-        if (typeof member === 'function') {
-          this.registerFunction(member);
-        }
+      Object.defineProperty(cls.prototype, key, descriptor);
+    } else if (key !== 'constructor') {
+      const member = cls.prototype[key];
+      if (typeof member === 'function') {
+        cls.prototype[key] = Runtime.fn(member);
       }
     }
-    return this.registerFunction(cls);
   }
+  return Runtime.fn(cls);
+};
 
-  /**
-   * Look up external references.
-   * @param {string} name 
-   */
-  _getExternal(name) {
-    if (this.externals.has(name)) {
-      return this._maybeWrap(this.externals.get(name), true);
-    }
-
-    if (this._runtime.globals.has(name)) {
-      return this._maybeWrap(this._runtime.globals.get(name), true);
-    }
-    throw new Runtime.Error(`undefined '${name}'`);
+// Expose Promise that works. Dynamically created functions that come
+// from external code need special handling. Here we add a subclass
+// that registers the `resolve` and `reject` functions before passing
+// them to the client code.
+const RuntimePromise = Runtime.fn(Object.freeze(class extends Promise {
+  constructor(f) {
+    super((resolve, reject) => {
+      f(Runtime.fn(resolve), Runtime.fn(reject));
+    });
   }
-
-  /**
-   * @param {{code: string, map?: object}} transpiled 
-   * @param {object?} thisArg
-   * @param {object?} args 
-   * @returns {Promise}
-   */
-  async run(transpiled, thisArg, args = {}) {
-    if (!transpiled[PREPARED]) {
-      throw new Error('Runtime.prepare() needed');
-    }
-
-    Object.entries(args).map(([key, value]) => this.externals.set(key, value));
-    const support = {
-      '_wrap': this._maybeWrap.bind(this),
-      '_call': this._callMethod.bind(this),
-      '_func': this.registerFunction.bind(this),
-      '_klass': this.registerClass.bind(this),
-      '_external': this._getExternal.bind(this)
-    };
-    
-    try {
-      const f = new Function(...Object.keys(support), transpiled.code);
-      return await f.call(thisArg, ...Object.values(support));
-    } catch (e) {
-      if (e === Object(e) && typeof e.stack === 'string') {
-        e.stack = SourceMap.patchStackTrace(e.stack, transpiled.map);
-      }
-      throw e;
-    }
-  }
-}
+}));
 
 /**
  * Given a class, returns array of related items (including the class).
@@ -730,5 +731,5 @@ function getOwnProperties(obj) {
     .flat();
 }
 
-export { Execution, Runtime, Transpiler };
+export { Runtime, Transpiler };
 //# sourceMappingURL=proxy-script.js.map
