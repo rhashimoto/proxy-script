@@ -44,7 +44,8 @@ const UNWRAP = Symbol('unwrap');
 const BLACKLIST = new Set([
   AsyncFunction,
   Function, Function.prototype.toString,
-  eval
+  eval,
+  setTimeout, setInterval
 ]);
 
 export class Runtime {

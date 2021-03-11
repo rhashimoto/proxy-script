@@ -175,8 +175,31 @@ describe('proxy-test', () => {
 
   test('runtime rejects calling eval', async () => {
     const transpiler = new Transpiler();
+    transpiler.globals.add('eval');
     const transpiled = transpiler.transpile(`
       eval('globalThis');
+    `);
+    const runtime = new Runtime();
+    const result = runtime.run(transpiled);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
+  });
+
+  test('runtime rejects calling setTimeout', async () => {
+    const transpiler = new Transpiler();
+    transpiler.globals.add('setTimeout');
+    const transpiled = transpiler.transpile(`
+      setTimeout('globalThis', 0);
+    `);
+    const runtime = new Runtime();
+    const result = runtime.run(transpiled);
+    await expect(result.catch(e => e)).resolves.toBeInstanceOf(Runtime.Error);
+  });
+
+  test('runtime rejects calling setInterval', async () => {
+    const transpiler = new Transpiler();
+    transpiler.globals.add('setInterval');
+    const transpiled = transpiler.transpile(`
+      setInterval('globalThis', 0);
     `);
     const runtime = new Runtime();
     const result = runtime.run(transpiled);
