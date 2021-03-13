@@ -25,9 +25,6 @@
         let transpiled;
         try {
           transpiled = transpiler.transpile(script);
-          console.log(transpiled);
-          console.log(transpiled.code);
-          transpiled = Runtime.prepare(transpiled);
           const result = await runtime.run(transpiled);
 
           document.getElementById('results').textContent = JSON.stringify(result, null, 2);
